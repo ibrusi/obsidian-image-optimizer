@@ -4,10 +4,10 @@ const path = require('path');
 
 const DEFAULT_SETTINGS = {
     binaryPath: 'obsidian-img-opt',
-    quality: 20,
+    quality: 40,
     gifMode: 'auto',
     gifLossy: 80,
-    attachedDir: 'attached',
+    attachedDir: 'attachments',
     backupDir: '.originals_backup',
     keepBackup: true,
     optimizeLocal: false,
@@ -176,8 +176,8 @@ class ImageOptimizerSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('WebP Quality (Default: 20%)')
-            .setDesc('Compression quality (1-100). Recommended is 20: minimal size where text in diagrams and screenshots remains sharp.')
+            .setName('WebP Quality (Default: 40%)')
+            .setDesc('Compression quality (1-100). Default is 40.')
             .addSlider(slider => slider
                 .setLimits(1, 100, 1)
                 .setValue(this.plugin.settings.quality)
@@ -205,7 +205,7 @@ class ImageOptimizerSettingTab extends PluginSettingTab {
             .setName('Attached Folder Name')
             .setDesc('Folder created alongside notes where downloaded images are saved.')
             .addText(text => text
-                .setPlaceholder('attached')
+                .setPlaceholder('attachments')
                 .setValue(this.plugin.settings.attachedDir)
                 .onChange(async (val) => {
                     this.plugin.settings.attachedDir = val;
@@ -234,10 +234,10 @@ class ImageOptimizerSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Markdown Link Format')
-            .setDesc('Format to replace remote links with: standard Markdown ![](attached/pic.webp) or Obsidian Wikilink ![[attached/pic.webp]].')
+            .setDesc('Format to replace remote links with: standard Markdown ![](attachments/pic.webp) or Obsidian Wikilink ![[attachments/pic.webp]].')
             .addDropdown(drop => drop
-                .addOption('markdown', 'Markdown: ![alt](attached/...)')
-                .addOption('wikilink', 'Wikilink: ![[attached/...]]')
+                .addOption('markdown', 'Markdown: ![alt](attachments/...)')
+                .addOption('wikilink', 'Wikilink: ![[attachments/...]]')
                 .setValue(this.plugin.settings.linkFormat)
                 .onChange(async (val) => {
                     this.plugin.settings.linkFormat = val;

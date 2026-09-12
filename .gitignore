@@ -1,0 +1,23 @@
+# Binaries
+bin/
+/obsidian-img-opt
+/obsidian-image-optimizer
+/test-build
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test artifacts
+*.test
+*.out
+*.prof
+
+# OS / Editor files
+.DS_Store
+.vscode/
+.idea/
+
+# Optimization artifacts & caches
+attached/
+.originals_backup/

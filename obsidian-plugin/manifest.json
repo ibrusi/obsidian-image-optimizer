@@ -1,0 +1,10 @@
+{
+  "id": "obsidian-image-optimizer",
+  "name": "Image Optimizer (Go)",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Downloads remote images from notes, converts them to lightweight WebP (default 20% quality), optimizes GIFs, keeps backups, and updates markdown links using a fast Go engine.",
+  "author": "Antigravity",
+  "authorUrl": "https://github.com/obsidianmd",
+  "isDesktopOnly": true
+}

@@ -15,13 +15,13 @@ type Config struct {
 	// FilePath is an optional single markdown file to process.
 	FilePath string
 
-	// AttachedDir is the folder name where images will be saved, relative to the note (e.g. "attached").
+	// AttachedDir is the folder name where images will be saved, relative to the note (e.g. "attachments").
 	AttachedDir string
 
 	// BackupDir is the folder name where original images are backed up before conversion.
 	BackupDir string
 
-	// Quality is the WebP lossy compression quality (0-100). Default is 20 (recommended minimum for legible text).
+	// Quality is the WebP lossy compression quality (0-100). Default is 40.
 	Quality int
 
 	// GifMode specifies how GIFs should be processed: "auto", "webp", "optimize", or "keep".
@@ -67,9 +67,9 @@ type Config struct {
 // DefaultConfig returns default configuration with recommended settings.
 func DefaultConfig() *Config {
 	return &Config{
-		AttachedDir:    "attached",
+		AttachedDir:    "attachments",
 		BackupDir:      ".originals_backup",
-		Quality:        20, // Recommended: minimal quality where text remains sharp and legible
+		Quality:        40,
 		GifMode:        "auto",
 		GifDropFrames:  false,
 		MaxColors:      128,
@@ -95,7 +95,7 @@ func ParseFlags() (*Config, error) {
 	flag.StringVar(&cfg.AttachedDir, "attachments", cfg.AttachedDir, "Alias for --attached-dir")
 	flag.StringVar(&cfg.BackupDir, "backup-dir", cfg.BackupDir, "Folder name for original backup images (created inside attached-dir)")
 	flag.StringVar(&cfg.BackupDir, "backup", cfg.BackupDir, "Alias for --backup-dir")
-	flag.IntVar(&cfg.Quality, "quality", cfg.Quality, "WebP lossy compression quality (0-100). Default is 20 (recommended text threshold)")
+	flag.IntVar(&cfg.Quality, "quality", cfg.Quality, "WebP lossy compression quality (0-100). Default is 40")
 	flag.StringVar(&cfg.GifMode, "gif-mode", cfg.GifMode, "GIF processing mode: auto | webp | optimize | keep")
 	flag.IntVar(&cfg.GifLossy, "gif-lossy", cfg.GifLossy, "Gifsicle lossy factor for GIF compression (default: 80)")
 	flag.BoolVar(&cfg.GifDropFrames, "gif-drop-frames", cfg.GifDropFrames, "Drop every 2nd frame in high FPS animated GIFs for extra compression")
@@ -109,7 +109,7 @@ func ParseFlags() (*Config, error) {
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Obsidian Image Optimizer (Go)\n")
-		fmt.Fprintf(os.Stderr, "Downloads remote images from Obsidian notes, converts to WebP (default 20%% quality),\n")
+		fmt.Fprintf(os.Stderr, "Downloads remote images from Obsidian notes, converts to WebP (default 40%% quality),\n")
 		fmt.Fprintf(os.Stderr, "handles GIFs, keeps backups, verifies size reduction, and updates markdown links.\n\n")
 		fmt.Fprintf(os.Stderr, "Usage:\n")
 		fmt.Fprintf(os.Stderr, "  obsidian-img-opt --file path/to/note.md\n")

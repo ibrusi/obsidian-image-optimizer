@@ -58,8 +58,6 @@ Some other text.
 	// 4. Configure processor
 	cfg := config.DefaultConfig()
 	cfg.VaultPath = tmpVault
-	cfg.Quality = 20
-	cfg.AttachedDir = "attached"
 	cfg.BackupDir = ".backup"
 
 	proc := NewProcessor(cfg)
@@ -89,13 +87,13 @@ Some other text.
 		t.Fatalf("updated markdown still contains remote URL:\n%s", updatedContent)
 	}
 
-	// Must contain attached/ and .webp
-	if !strings.Contains(updatedContent, "attached/") || !strings.Contains(updatedContent, ".webp") {
-		t.Fatalf("expected attached/ and .webp in markdown, got:\n%s", updatedContent)
+	// Must contain attachments/ and .webp
+	if !strings.Contains(updatedContent, "attachments/") || !strings.Contains(updatedContent, ".webp") {
+		t.Fatalf("expected attachments/ and .webp in markdown, got:\n%s", updatedContent)
 	}
 
-	// 7. Verify attached directory and files exist
-	attachedDir := filepath.Join(tmpVault, "attached")
+	// 7. Verify attachments directory and files exist
+	attachedDir := filepath.Join(tmpVault, "attachments")
 	backupDir := filepath.Join(attachedDir, ".backup")
 
 	if _, err := os.Stat(attachedDir); os.IsNotExist(err) {

@@ -1,124 +1,147 @@
 # Obsidian Image Optimizer (Go)
 
-Высокопроизводительная утилита и плагин для [Obsidian](https://obsidian.md) на Go, автоматизирующая полный цикл работы с изображениями в заметках:
-1. **Скачивание веб-картинок** по ссылкам (`http(s)://`) в папку `attachments/` рядом со статьями.
-2. **Резервное копирование исходников** в подпапку `.originals_backup/`.
-3. **Конвертация в WebP** с настраиваемым качеством (**по умолчанию 40%** — баланс минимального размера и высокой четкости текста).
-4. **Умное сжатие GIF**: поддержка анимированного WebP (`gif2webp`, `ffmpeg`), сжатия через `gifsicle --lossy=80` и встроенного Go-алгоритма.
-5. **Строгая проверка размера**: новый файл оставляется **только если его размер стал меньше оригинала**. Если размер увеличился или равен — новая версия удаляется, а в статье остаётся исходник.
-6. **Автоматическая подмена ссылок** в Markdown (`![alt](url)` / `<img src="url">` / `![[url]]` -> локальные `attachments/image.webp`).
-7. **Опциональная оптимизация уже имеющихся локальных изображений** в хранилище (`--optimize-local`).
+[English](README.md) | [Русский](README_RU.md)
+
+A high-performance Go CLI utility and [Obsidian](https://obsidian.md) plugin that automates the entire image processing workflow in your notes:
+
+1. **Download remote images**: Fetches web images from URLs (`http(s)://`) and saves them locally into the `attachments/` folder relative to each note.
+2. **Originals backup**: Automatically preserves original images in a `.originals_backup/` subfolder.
+3. **WebP conversion**: Converts images to WebP with configurable compression quality (**default 40%** — balanced for minimal file size while preserving sharp text and details).
+4. **Smart GIF compression**: Supports Animated WebP (`gif2webp`, `ffmpeg`), lossy LZW compression via `gifsicle --lossy=80`, and a built-in Go palette optimizer.
+5. **Strict size verification**: The converted image is kept **only if its file size is strictly smaller than the original**. If the size increases or remains unchanged, the converted file is removed and the original is retained.
+6. **Automatic link rewriting**: Rewrites Markdown links (`![alt](url)`, `<img src="url">`, `![[url]]`) to local attachment paths (`attachments/image.webp`).
+7. **Optional local image optimization**: Recursively optimizes already existing local images inside your vault (`--optimize-local`).
 
 ---
 
-## 💡 Решение проблемы с GIF
+## 💡 GIF Optimization Strategy
 
-> **Ключевой факт**: GIF **можно** перевести в WebP! 
-> Формат WebP полноценно поддерживает покадровую анимацию (**Animated WebP**), а Chromium и Electron (на которых построен Obsidian) поддерживают анимированный WebP нативно из коробки!
+> **Key Fact**: GIFs **can** be converted to WebP!  
+> WebP natively supports frame-by-frame animation (**Animated WebP**), and Chromium/Electron (on which Obsidian is built) supports Animated WebP out of the box!
 
-### Варианты решения для GIF:
+### GIF Handling Options:
 
-| Вариант | Как работает | Экономия размера | Плюсы и минусы |
+| Option | How It Works | Size Reduction | Pros & Cons |
 | :--- | :--- | :--- | :--- |
-| **1. Animated WebP (Рекомендуется)** | Конвертация кадров через `gif2webp` или `ffmpeg` (`--gif-mode=webp` или `auto`) | **60% – 85%** | 🔥 Максимальное сжатие, 24-битный цвет (у GIF только 256 цветов), нативная поддержка в Obsidian. |
-| **2. Lossy GIF (`gifsicle`)** | Оптимизация LZW-таблиц: `gifsicle -O3 --lossy=80` (`--gif-mode=optimize`) | **30% – 55%** | Сохраняет расширение `.gif`, поддерживается старыми читалками, но размер больше, чем у WebP. |
-| **3. ffmpeg PaletteGen + 15fps** | Пересчёт 256-цветовой палитры и ограничение fps (`scale=480:-1`) | **40% – 60%** | Качественное уменьшение разрешения и кадров без артефактов. |
-| **4. Конвертация в MP4 / WebM** | Видео в формате h.264/AV1 (`![[animation.mp4]]`) | **90% – 95%** | Идеально для тяжелых скринкастов > 10 МБ. Obsidian воспроизводит видео прямо в теле заметки. |
+| **1. Animated WebP (Recommended)** | Frame conversion via `gif2webp` or `ffmpeg` (`--gif-mode=webp` or `auto`) | **60% – 85%** | 🔥 Maximum compression, 24-bit color (GIF is limited to 256 colors), native rendering in Obsidian. |
+| **2. Lossy GIF (`gifsicle`)** | LZW color table optimization: `gifsicle -O3 --lossy=80` (`--gif-mode=optimize`) | **30% – 55%** | Preserves `.gif` extension, compatible with legacy markdown readers, but larger file size than WebP. |
+| **3. ffmpeg PaletteGen + 15fps** | 256-color palette recalculation and FPS throttling (`scale=480:-1`) | **40% – 60%** | Clean downscaling without compression artifacts. |
+| **4. Convert to MP4 / WebM** | Video format h.264/AV1 (`![[animation.mp4]]`) | **90% – 95%** | Ideal for heavy screen recordings > 10 MB. Obsidian plays video directly in the note body. |
 
-В данной утилите по умолчанию включен режим **`auto`**:
-- Если установлены `gif2webp` или `ffmpeg` — анимированный GIF превращается в легкий **Animated WebP**.
-- Если внешних утилит нет или выбран режим `optimize` — запускается `gifsicle -O3 --lossy=80` либо встроенный оптимизатор палитры на Go.
-- В любом случае проверяется размер: если сжатый GIF/WebP оказался больше оригинала, он удаляется, и сохраняется исходный GIF.
+By default, the optimizer runs in **`auto`** mode:
+- If `gif2webp` or `ffmpeg` is available on your system, animated GIFs are converted to lightweight **Animated WebP**.
+- If no external tools are found or `--gif-mode=optimize` is set, `gifsicle -O3 --lossy=80` or the built-in Go palette optimizer is used.
+- In all cases, strict size verification applies: if the resulting file is not smaller than the original, the original GIF is preserved.
 
 ---
 
-## 🚀 Установка и сборка
+## 🚀 Installation & Build
 
-### 1. Системные зависимости (рекомендуется)
-Утилита работает полностью автономно на чистом Go, но для максимальной скорости и расширенных возможностей рекомендуется установить системные инструменты:
+### 1. System Dependencies (Recommended)
+The utility can run self-contained using pure Go, but for optimal performance and extended GIF/WebP conversion features, installing external CLI tools is recommended:
+
 ```bash
 # Ubuntu / Debian
 sudo apt update
 sudo apt install -y webp gifsicle ffmpeg
+
+# macOS (Homebrew)
+brew install webp gifsicle ffmpeg
+
+# Windows (Scoop / Chocolatey)
+scoop install webp gifsicle ffmpeg
+# or
+choco install webp gifsicle ffmpeg
 ```
 
-### 2. Сборка бинарника на Go
+### 2. Build Go Binary
 ```bash
 cd obsidian-image-optimizer
 go build -o bin/obsidian-img-opt cmd/obsidian-img-opt/main.go
 ```
-(Опционально) скопируйте бинарник в `/usr/local/bin`:
+
+*(Optional)* Copy binary to `/usr/local/bin` for system-wide access:
 ```bash
 sudo cp bin/obsidian-img-opt /usr/local/bin/
 ```
 
 ---
 
-## 🛠️ Использование через CLI
+## 🛠️ CLI Usage
 
-### Обработка одной заметки:
+### Process a single note:
 ```bash
 obsidian-img-opt --file "/path/to/vault/My Article.md"
 ```
 
-### Обработка всего хранилища Obsidian (рекурсивно):
+### Process an entire Obsidian vault recursively:
 ```bash
 obsidian-img-opt --vault "/path/to/vault"
 ```
 
-### Настройка качества WebP (по умолчанию 40%):
+### Adjust WebP quality (default is 40%):
 ```bash
 obsidian-img-opt --file "note.md" --quality 40
 ```
 
-### Оптимизация и локальных, и удаленных картинок:
+### Optimize both local and remote images:
 ```bash
 obsidian-img-opt --file "note.md" --optimize-local
 ```
 
-### Предпросмотр без изменения файлов (`--dry-run`):
+### Dry-run simulation (no files written):
 ```bash
 obsidian-img-opt --vault "/path/to/vault" --dry-run
 ```
 
-### Все доступные флаги:
-| Флаг | Значение по умолчанию | Описание |
+### Available CLI Flags:
+
+| Flag | Default Value | Description |
 | :--- | :--- | :--- |
-| `--file` | `""` | Путь к конкретному Markdown-файлу. |
-| `--vault` | `""` (или текущая папка) | Путь к хранилищу Obsidian для рекурсивной обработки. |
-| `--quality` | `40` | Качество WebP (1–100). По умолчанию 40%. |
-| `--attached-dir`| `attachments` | Имя папки с картинками рядом с заметкой. |
-| `--backup-dir` | `.originals_backup` | Подпапка для сохранения оригиналов. |
-| `--gif-mode` | `auto` | Режимы: `auto`, `webp`, `optimize`, `keep`. |
-| `--gif-lossy` | `80` | Степень сжатия gifsicle (обычно 80–90). |
-| `--optimize-local` | `false` | Конвертировать также уже существующие локальные JPG/PNG/GIF. |
-| `--link-format`| `markdown` | Формат ссылок: `markdown` (`![](...)`) или `wikilink` (`![[...]]`). |
-| `--keep-backup`| `true` | Сохранять ли бэкап оригиналов в `.originals_backup/`. |
-| `--dry-run` | `false` | Режим симуляции (без записи на диск). |
+| `--file` | `""` | Path to a specific Markdown file. |
+| `--vault` | `""` (or current directory) | Path to Obsidian vault for recursive processing. |
+| `--quality` | `40` | WebP compression quality (1–100). Default is 40%. |
+| `--attached-dir`| `attachments` | Name of folder for attachments relative to note. |
+| `--backup-dir` | `.originals_backup` | Subfolder for storing original image backups. |
+| `--gif-mode` | `auto` | GIF handling modes: `auto`, `webp`, `optimize`, `keep`. |
+| `--gif-lossy` | `80` | Compression level for gifsicle (typically 80–90). |
+| `--optimize-local` | `false` | Also convert existing local JPG/PNG/GIF images. |
+| `--link-format`| `markdown` | Link syntax: `markdown` (`![](...)`) or `wikilink` (`![[...]]`). |
+| `--keep-backup`| `true` | Whether to store originals in `.originals_backup/`. |
+| `--dry-run` | `false` | Simulation mode (does not modify disk). |
 
 ---
 
-## 🔌 Интеграция с Obsidian
+## 🔌 Obsidian Integration
 
-Есть два простых способа запускать оптимизацию прямо из интерфейса Obsidian:
+You can easily trigger optimization directly within Obsidian using two methods:
 
-### Способ 1: Плагин-обертка (`obsidian-plugin/`)
-В репозитории подготовлен готовый плагин:
-1. Скопируйте папку `obsidian-plugin` в каталог плагинов вашего хранилища:
+### Method 1: Obsidian Plugin (`obsidian-plugin/`)
+A ready-to-use Obsidian desktop plugin is included in this repository:
+1. Copy the `obsidian-plugin` folder into your vault's plugins directory:
    ```bash
    cp -r obsidian-plugin "/path/to/vault/.obsidian/plugins/obsidian-image-optimizer"
    ```
-2. Откройте Obsidian -> **Settings** -> **Community plugins** -> включите **Image Optimizer (Go)**.
-3. На левой панели (Ribbon) появится иконка для оптимизации активной заметки в 1 клик!
-4. Также в Command Palette (`Ctrl+P`) доступны команды:
+2. Open Obsidian -> **Settings** -> **Community plugins** -> enable **Image Optimizer (Go)**.
+3. A ribbon icon will appear on the left bar to optimize the current note in 1 click!
+4. Commands are also registered in the Command Palette (`Ctrl+P` / `Cmd+P`):
    - `Image Optimizer: Optimize images in current note`
    - `Image Optimizer: Optimize images in entire vault`
 
-### Способ 2: Через популярный плагин Shell Commands
-Если у вас уже установлен плагин **Shell Commands** в Obsidian:
-1. Создайте команду:
+### Method 2: Shell Commands Plugin
+If you already use the popular **Shell Commands** community plugin:
+1. Add a new command:
    ```bash
    obsidian-img-opt --file "{{file_path:absolute}}" --quality 40
    ```
-2. Назначьте горячую клавишу (например, `Ctrl+Alt+I`).
-3. При нажатии заметка скачает все ссылки, сожмет их и подменит пути!
+2. Assign a hotkey (for example, `Ctrl+Alt+I`).
+3. Pressing the hotkey will download all remote images in the active note, convert them to WebP, and replace links automatically.
+
+---
+
+## ⚠️ Disclaimer
+
+> [!WARNING]
+> This utility reads and modifies Markdown notes and image attachments.
+> While automatic backups of original images are enabled by default (`.originals_backup/`), **it is strongly recommended to make a full backup of your Obsidian vault** or track it with version control (such as Git) before performing batch optimizations.
+> This software is provided "as is", without warranty of any kind, express or implied. The authors are not liable for any data loss. Use at your own risk.

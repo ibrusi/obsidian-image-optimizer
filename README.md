@@ -1,20 +1,83 @@
-# Obsidian Image Optimizer (Go)
+# Obsidian Image Optimizer
 
 [English](README.md) | [Русский](README.ru.md)
 
-A Go CLI utility and [Obsidian](https://obsidian.md) plugin that automates the image workflow in your notes:
+Keeps the images of your [Obsidian](https://obsidian.md) notes small and local: web images are downloaded into the vault, and images are converted to WebP at a quality where the difference is not visible (**40** by default) — typically **5–8 times smaller** for screenshots and photos from the web. Links in your notes are updated automatically.
 
-1. **Download remote images**: fetches images linked by URL (`http(s)://`) into an `attachments/` folder next to each note. Only real images are accepted — an HTML "hotlinking denied" page never replaces your link.
-2. **WebP conversion**: converts images to WebP with configurable quality (**default 40** — minimal file size while keeping text sharp). Phone photos are rotated according to their EXIF orientation, and the colour profile (ICC) is preserved.
-3. **Smart GIF compression**: animated WebP (`gif2webp`, `ffmpeg`), lossy GIF via `gifsicle`, and a built-in Go palette optimizer as a last resort.
-4. **Strict size verification**: a converted image is used **only if it is strictly smaller than the original**; otherwise the original is kept.
-5. **Safe link rewriting**: rewrites `![alt](url)`, `<img src="url">` and `![[url]]` to local paths. Links inside code blocks, inline code and comments are never touched, and edits you make in the note while images are downloading are preserved.
-6. **Never overwrites your files**: new files always get a free name (`pic.webp`, `pic-1.webp`, …); existing files are never overwritten or deleted by mistake.
-7. **Optional local image optimization** (`--optimize-local`): optimizes images already in the vault and updates **every** note that embeds them.
+It comes in two parts:
+- **Obsidian plugin** (`obsidian-plugin/`) — works inside Obsidian on **Windows, macOS, Linux, Android and iOS**, with nothing to install in the operating system: the WebP encoder (libwebp, the library behind `cwebp`) is compiled to WebAssembly and ships inside the plugin.
+- **Command-line tool** (Go) — for batch processing and automation outside Obsidian.
 
 ---
 
-## 💡 GIF Optimization Strategy
+## 📱 Obsidian plugin
+
+### What it does
+- **Downloads web images** (`![](https://…)` and `<img src="https://…">`) into a folder of your choice and points the embeds at the local files. Only real images are accepted: an HTML "hotlinking denied" page never replaces your link.
+- **Converts to WebP** — JPG, PNG and BMP to WebP, **animated GIFs to animated WebP**. A converted image is used only if it is at least 5% smaller (configurable); otherwise the original is kept.
+- **Converts images already in the vault**: the WebP is written next to the original, every link to it in every note is rewritten (embeds, links, properties; sizes such as `|200` are kept), and the original is moved to the vault's `.trash` folder, where it can be restored. An original that is still mentioned anywhere — a canvas, a property, plain text — is kept.
+- **Converts on paste and drop**: a pasted screenshot is saved as WebP right away; web images in pasted text are downloaded.
+- **Stays responsive**: encoding runs in a background worker, one image at a time; long runs show progress and can be stopped.
+
+### Installation
+Until the plugin is in the community catalogue, install it with **BRAT**:
+1. Install and enable the community plugin **BRAT**.
+2. Run **BRAT: Add a beta plugin for testing**, enter `ibrusi/obsidian-local-image-small` and pick the latest version.
+3. Enable **Image Optimizer** in *Settings → Community plugins*.
+
+Manual installation: download `obsidian-image-optimizer.zip` from the [latest release](https://github.com/ibrusi/obsidian-local-image-small/releases), unpack it into `<vault>/.obsidian/plugins/` (the `.obsidian` folder is hidden) and enable the plugin.
+
+### Usage
+Open the command palette (`Ctrl/Cmd+P` on a computer; on a phone swipe down in a note or use the menu) and type **image**:
+
+| Command | What it does |
+| :--- | :--- |
+| **Optimize images in the current note** | Downloads web images and converts the note's images. |
+| **Optimize images in the whole vault** | The same for every note, with progress and a Stop button. |
+| **Stop image optimization** | Stops what is running. Finished images stay done. |
+
+With **Convert on paste and drop** enabled (default), pasted and dropped images are handled without any command.
+
+### Settings
+| Setting | Default | Description |
+| :--- | :--- | :--- |
+| Image folder | `Attachments` | Where downloaded and pasted images go: `Attachments` — a folder next to the note; `/Attachments` — one folder at the vault root; empty — the note's own folder. Converted local images stay next to their originals. |
+| Quality | `40` | WebP quality, 1–100. |
+| Compression effort | `4` | libwebp method, 0–6. `6` gives files about 5% smaller but is several times slower — noticeable on phones. |
+| Minimum saving, % | `5` | Keep the original unless the WebP is at least this much smaller. |
+| GIF | Convert to WebP | Or keep GIFs as they are. |
+| Convert images already in the vault | on | Commands also convert local JPG/PNG/BMP/GIF and move the originals to `.trash`. |
+| Convert on paste and drop | on | See above. |
+| Maximum download, MB | `30` | Larger downloads are refused. |
+| Maximum image size, megapixels | `50` | Larger images are kept as they are (for animations: width × height × frames, half of this budget), to protect memory on phones. |
+| Allow private network addresses | off | By default links to `localhost`, `*.local` and private, loopback and link-local IP addresses are refused, so a note from an untrusted source cannot probe your network. |
+| Write a log note | off | Appends details of every run to `image-optimizer-log.md`. |
+
+Plugin settings are stored in `.obsidian/plugins/obsidian-image-optimizer/data.json`; if your sync does not copy `.obsidian/plugins`, set them on every device.
+
+### Good to know
+- EXIF metadata (date, GPS) is not kept in converted images; the orientation of phone photos is applied to the pixels.
+- Files are never overwritten: new files get a free name (`pic.webp`, `pic-1.webp`, …).
+- Links inside code blocks, inline code and comments are left alone. Notes open in an editor are saved before they are rewritten.
+- WebP files are never re-encoded, so running the plugin again does not lower quality.
+
+---
+
+## ⌨️ Command-line tool (Go)
+
+The CLI processes a vault from the terminal, with external encoders (`cwebp`, `ffmpeg`, `gifsicle`). It is useful for batch runs, scripts and scheduled jobs.
+
+1. **Download remote images** into an `attachments/` folder next to each note. Only real images are accepted.
+2. **WebP conversion** with configurable quality (default 40). Phone photos are rotated according to their EXIF orientation, and the colour profile (ICC) is preserved.
+3. **Smart GIF compression**: animated WebP (`gif2webp`, `ffmpeg`), lossy GIF via `gifsicle`, and a built-in Go palette optimizer as a last resort.
+4. **Strict size verification**: a converted image is used **only if it is strictly smaller than the original**.
+5. **Safe link rewriting**: `![alt](url)`, `<img src="url">` and `![[url]]`; code blocks, inline code and comments are never touched.
+6. **Never overwrites your files**: new files always get a free name.
+7. **Optional local image optimization** (`--optimize-local`), updating **every** note that embeds the image.
+
+---
+
+### 💡 GIF Optimization Strategy
 
 > **Key fact**: GIFs **can** be converted to WebP!
 > WebP supports frame-by-frame animation (**Animated WebP**), and Chromium/Electron (on which Obsidian is built) displays it natively.
@@ -32,9 +95,9 @@ In all cases the strict size check applies: if the result is not smaller, the or
 
 ---
 
-## 🚀 Installation & Build
+### 🚀 Installation & Build
 
-### 1. System dependencies (required for WebP)
+#### 1. System dependencies (required for WebP)
 JPEG/PNG/TIFF/BMP → WebP conversion requires `cwebp` (package `webp`) or `ffmpeg`. Without them only GIFs can be optimized (with the built-in Go optimizer), and the tool prints a warning at startup.
 
 ```bash
@@ -51,7 +114,7 @@ scoop install libwebp gifsicle ffmpeg
 choco install webp gifsicle ffmpeg
 ```
 
-### 2. Build the Go binary (Go 1.23+)
+#### 2. Build the Go binary (Go 1.23+)
 ```bash
 git clone https://github.com/ibrusi/obsidian-local-image-small.git
 cd obsidian-local-image-small
@@ -65,40 +128,40 @@ sudo cp bin/obsidian-img-opt /usr/local/bin/
 
 ---
 
-## 🛠️ CLI Usage
+### 🛠️ CLI Usage
 
-### Process a single note:
+#### Process a single note:
 ```bash
 obsidian-img-opt --vault "/path/to/vault" --file "/path/to/vault/My Article.md"
 ```
 Passing `--vault` together with `--file` is recommended: it bounds which files may be touched and is required to replace local originals safely (see below). `--file` alone also works; local originals are then never replaced.
 
-### Process an entire vault recursively:
+#### Process an entire vault recursively:
 ```bash
 obsidian-img-opt --vault "/path/to/vault"
 ```
 
-### Adjust WebP quality (default is 40):
+#### Adjust WebP quality (default is 40):
 ```bash
 obsidian-img-opt --vault "/path/to/vault" --quality 60
 ```
 
-### Optimize both local and remote images:
+#### Optimize both local and remote images:
 ```bash
 obsidian-img-opt --vault "/path/to/vault" --optimize-local
 ```
 
-### Dry run (nothing is downloaded or written):
+#### Dry run (nothing is downloaded or written):
 ```bash
 obsidian-img-opt --vault "/path/to/vault" --optimize-local --dry-run
 ```
 
-### Machine-readable output:
+#### Machine-readable output:
 ```bash
 obsidian-img-opt --vault "/path/to/vault" --output json
 ```
 
-### Available CLI flags
+#### Available CLI flags
 
 | Flag | Default | Description |
 | :--- | :--- | :--- |
@@ -127,7 +190,7 @@ obsidian-img-opt --vault "/path/to/vault" --output json
 
 The tool is configured via CLI flags only; it reads no environment variables except the standard `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`.
 
-### Exit codes
+#### Exit codes
 
 | Code | Meaning |
 | :--- | :--- |
@@ -138,7 +201,7 @@ The tool is configured via CLI flags only; it reads no environment variables exc
 
 ---
 
-## 🛡️ Safety Guarantees
+### 🛡️ Safety Guarantees
 
 - **No clobbering.** Results are written to temp files and published under a free name; your existing files are never overwritten.
 - **Local originals are replaced last.** With `--optimize-local`, the optimized copy is created first, then every note embedding the image is rewritten, and only then is the original moved to `--backup-dir`. The original is kept if any note failed to update, if `--vault` is unknown, or if its file name is **still mentioned anywhere** in the vault (properties, canvases, plain `[[links]]`, text).
@@ -151,23 +214,8 @@ Known limitations: indented (4-space) code blocks are not detected as code (in O
 
 ---
 
-## 🔌 Obsidian Integration
+### 🔌 Use from Obsidian via Shell Commands
 
-### Method 1: Obsidian plugin (`obsidian-plugin/`)
-A desktop plugin is included in this repository:
-1. Copy the `obsidian-plugin` folder into your vault's plugins directory:
-   ```bash
-   cp -r obsidian-plugin "/path/to/vault/.obsidian/plugins/obsidian-image-optimizer"
-   ```
-2. Open Obsidian → **Settings** → **Community plugins** → enable **Image Optimizer (Go)**.
-3. Set the binary path in the plugin settings if `obsidian-img-opt` is not in `PATH`.
-4. A ribbon icon optimizes the current note in one click. Commands in the Command Palette (`Ctrl+P` / `Cmd+P`):
-   - `Image Optimizer: Optimize images in current note`
-   - `Image Optimizer: Optimize images in entire vault`
-
-The plugin passes the vault root together with the note, reads the JSON summary (`--output json`) and prevents starting a second run while one is in progress. Plugin version 1.1.0 requires a binary built from this version.
-
-### Method 2: Shell Commands plugin
 With the **Shell Commands** community plugin:
 1. Add a new command:
    ```bash
@@ -179,13 +227,26 @@ With the **Shell Commands** community plugin:
 
 ## 🧪 Development
 
+### Plugin
+```bash
+cd obsidian-plugin
+npm ci
+npm run typecheck
+npm test               # unit tests (Node 22.18+)
+npm run test:browser   # encoders in Chromium and WebKit (needs Playwright browsers)
+npm run build          # main.js
+```
+A release is published by CI for every new version in `manifest.json` (keep `package.json` in sync); versions with a suffix such as `2.0.0-beta.3` are pre-releases.
+
+### CLI
+
 ```bash
 gofmt -l .                 # must print nothing
 go vet ./...
 go test -race -cover ./... # integration tests are skipped when cwebp/gif2webp are missing
 ```
 
-CI (`.github/workflows/ci.yml`) additionally runs `staticcheck` and checks the plugin syntax.
+CI (`.github/workflows/ci.yml`) additionally runs `staticcheck`, and builds and tests the plugin in Chromium and WebKit.
 
 ---
 

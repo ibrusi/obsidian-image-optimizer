@@ -10,7 +10,7 @@ export interface RemoteImage {
   width?: string;
 }
 
-interface Range {
+export interface Range {
   start: number;
   end: number;
 }
@@ -56,8 +56,28 @@ export function replaceImages(text: string, replace: (image: RemoteImage) => str
 }
 
 function parseEmbed(text: string, start: number): RemoteImage | null {
-  // Alt text: up to the matching "]" on the same line, honouring escapes.
-  let i = start + 2;
+  const link = parseMarkdownLink(text, start);
+  if (!link || !link.embed || !/^https?:\/\//i.test(link.destination)) return null;
+  return { kind: 'markdown', start, end: link.end, alt: link.text, url: link.destination };
+}
+
+export interface MarkdownLink {
+  start: number;
+  end: number;
+  embed: boolean;
+  text: string;
+  /** The destination as written, without angle brackets. */
+  destination: string;
+}
+
+// parseMarkdownLink parses [text](destination "title") or its embed form
+// with a leading "!" at start.
+export function parseMarkdownLink(text: string, start: number): MarkdownLink | null {
+  const embed = text[start] === '!';
+  const open = embed ? start + 1 : start;
+  if (text[open] !== '[') return null;
+  // Link text: up to the matching "]" on the same line, honouring escapes.
+  let i = open + 1;
   let depth = 0;
   for (; i < text.length; i++) {
     const c = text[i];
@@ -70,7 +90,7 @@ function parseEmbed(text: string, start: number): RemoteImage | null {
     }
   }
   if (text[i] !== ']' || text[i + 1] !== '(') return null;
-  const alt = text.slice(start + 2, i);
+  const label = text.slice(open + 1, i);
 
   i += 2;
   while (text[i] === ' ') i++;
@@ -108,13 +128,12 @@ function parseEmbed(text: string, start: number): RemoteImage | null {
     while (text[i] === ' ') i++;
   }
   if (text[i] !== ')') return null;
-  if (!/^https?:\/\//i.test(url)) return null;
-  return { kind: 'markdown', start, end: i + 1, alt, url };
+  return { start, end: i + 1, embed, text: label, destination: url };
 }
 
 // ignoredRanges lists fenced code blocks, inline code spans, HTML comments
 // and Obsidian %% comments, sorted by start.
-function ignoredRanges(text: string): Range[] {
+export function ignoredRanges(text: string): Range[] {
   const ranges: Range[] = [];
   // unclosed[n] is the paragraph end up to which no run of n backticks
   // exists; it keeps notes with many stray backticks linear.
@@ -208,7 +227,7 @@ function findClosingRun(text: string, from: number, n: number, unclosed: Map<num
 
 // rangeChecker answers "is offset inside one of these sorted ranges" in
 // O(log n), so notes with large code blocks stay linear overall.
-function rangeChecker(ranges: Range[]): (offset: number) => boolean {
+export function rangeChecker(ranges: Range[]): (offset: number) => boolean {
   return (offset) => {
     let lo = 0;
     let hi = ranges.length - 1;

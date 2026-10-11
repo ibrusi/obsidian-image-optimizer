@@ -1,4 +1,5 @@
-import type { HttpPort, HttpResponse, LinkPort, VaultPort } from '../src/services/ports.ts';
+import { findLocalLinks } from '../src/domain/local-links.ts';
+import type { HttpPort, HttpResponse, LinkPort, MetadataPort, VaultPort } from '../src/services/ports.ts';
 
 // MemoryVault is an in-memory VaultPort with the same no-clobber and
 // case-insensitive name semantics as a real vault on desktop and mobile.
@@ -62,6 +63,10 @@ export class MemoryVault implements VaultPort {
     if (folder) this.put(`${folder}/.keep`, ''), this.files.delete(`${folder}/.keep`);
   }
 
+  textFiles(): string[] {
+    return [...this.files.keys()].filter((p) => p.endsWith('.md') || p.endsWith('.canvas'));
+  }
+
   async trash(path: string): Promise<void> {
     if (!this.files.delete(path)) throw new Error(`file not found: ${path}`);
     this.trashed.push(path);
@@ -69,8 +74,36 @@ export class MemoryVault implements VaultPort {
 }
 
 export class FakeLinks implements LinkPort {
-  embed(targetPath: string, _sourcePath: string, alias?: string): string {
-    return `![[${targetPath}${alias ? `|${alias}` : ''}]]`;
+  link(targetPath: string, _sourcePath: string, alias?: string): string {
+    return `[[${targetPath}${alias ? `|${alias}` : ''}]]`;
+  }
+
+  embed(targetPath: string, sourcePath: string, alias?: string): string {
+    return '!' + this.link(targetPath, sourcePath, alias);
+  }
+}
+
+// FakeMetadata resolves links like Obsidian: relative to the note, from the
+// vault root, then by unique file name; backlinks come from note contents.
+export class FakeMetadata implements MetadataPort {
+  private readonly vault: MemoryVault;
+
+  constructor(vault: MemoryVault) {
+    this.vault = vault;
+  }
+
+  resolve(linkpath: string, sourcePath: string): string | null {
+    const dir = sourcePath.includes('/') ? sourcePath.slice(0, sourcePath.lastIndexOf('/') + 1) : '';
+    for (const candidate of [normalize(dir + linkpath), normalize(linkpath)]) {
+      if (this.vault.files.has(candidate)) return candidate;
+    }
+    const byName = [...this.vault.files.keys()].filter((p) => p === linkpath || p.endsWith(`/${linkpath}`));
+    return byName.length === 1 ? byName[0] : null;
+  }
+
+  backlinks(targetPath: string): string[] {
+    return this.vault.textFiles().filter((source) => source.endsWith('.md') &&
+      findLocalLinks(this.vault.text(source)).some((l) => this.resolve(l.target, source) === targetPath));
   }
 }
 
@@ -89,4 +122,13 @@ export class FakeHttp implements HttpPort {
     if (route instanceof Error) throw route;
     return route;
   }
+}
+
+function normalize(path: string): string {
+  const parts: string[] = [];
+  for (const part of path.split('/')) {
+    if (part === '..') parts.pop();
+    else if (part && part !== '.') parts.push(part);
+  }
+  return parts.join('/');
 }

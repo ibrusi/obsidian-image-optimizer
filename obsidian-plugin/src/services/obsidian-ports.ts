@@ -1,5 +1,5 @@
 import { type App, normalizePath, requestUrl, TFile, TFolder } from 'obsidian';
-import type { HttpPort, LinkPort, VaultPort } from './ports.ts';
+import type { HttpPort, LinkPort, MetadataPort, VaultPort } from './ports.ts';
 
 export class ObsidianVault implements VaultPort {
   private readonly app: App;
@@ -49,6 +49,12 @@ export class ObsidianVault implements VaultPort {
     await this.app.vault.trash(this.file(path), false);
   }
 
+  textFiles(): string[] {
+    return this.app.vault.getFiles()
+      .filter((file) => file.extension === 'md' || file.extension === 'canvas')
+      .map((file) => file.path);
+  }
+
   private file(path: string): TFile {
     const file = this.app.vault.getAbstractFileByPath(normalizePath(path));
     if (!(file instanceof TFile)) throw new Error(`file not found: ${path}`);
@@ -63,12 +69,36 @@ export class ObsidianLinks implements LinkPort {
     this.app = app;
   }
 
-  embed(targetPath: string, sourcePath: string, alias?: string): string {
+  link(targetPath: string, sourcePath: string, alias?: string): string {
     const file = this.app.vault.getAbstractFileByPath(normalizePath(targetPath));
     if (!(file instanceof TFile)) throw new Error(`file not found: ${targetPath}`);
     // The link format (wikilink or Markdown, relative or shortest path)
     // follows the user's "Files and links" settings.
-    return '!' + this.app.fileManager.generateMarkdownLink(file, sourcePath, undefined, alias);
+    return this.app.fileManager.generateMarkdownLink(file, sourcePath, undefined, alias);
+  }
+
+  embed(targetPath: string, sourcePath: string, alias?: string): string {
+    return '!' + this.link(targetPath, sourcePath, alias);
+  }
+}
+
+export class ObsidianMetadata implements MetadataPort {
+  private readonly app: App;
+
+  constructor(app: App) {
+    this.app = app;
+  }
+
+  resolve(linkpath: string, sourcePath: string): string | null {
+    return this.app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath)?.path ?? null;
+  }
+
+  backlinks(targetPath: string): string[] {
+    const sources: string[] = [];
+    for (const [source, targets] of Object.entries(this.app.metadataCache.resolvedLinks)) {
+      if (targets[targetPath]) sources.push(source);
+    }
+    return sources;
   }
 }
 

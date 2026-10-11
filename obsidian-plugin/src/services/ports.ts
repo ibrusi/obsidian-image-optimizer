@@ -15,10 +15,21 @@ export interface VaultPort {
   ensureFolder(folder: string): Promise<void>;
   /** Moves a file into the vault's .trash folder, where it can be restored. */
   trash(path: string): Promise<void>;
+  /** Paths of every note and canvas: the files that can refer to an image. */
+  textFiles(): string[];
+}
+
+export interface MetadataPort {
+  /** The file a link path in sourcePath points to, the way Obsidian resolves it. */
+  resolve(linkpath: string, sourcePath: string): string | null;
+  /** Notes that link to targetPath, according to Obsidian's link index. */
+  backlinks(targetPath: string): string[];
 }
 
 export interface LinkPort {
-  /** An embed of target written in the user's link format, relative to source. */
+  /** A link to target written in the user's link format, relative to source. */
+  link(targetPath: string, sourcePath: string, alias?: string): string;
+  /** The same as link, as an embed. */
   embed(targetPath: string, sourcePath: string, alias?: string): string;
 }
 

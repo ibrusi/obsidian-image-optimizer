@@ -1,212 +1,349 @@
+// Package optimizer produces smaller versions of images.
+//
+// The optimizer never modifies or removes the source image and never writes
+// to a final file name: it returns a temp file next to the source (the
+// "candidate") that is guaranteed to be strictly smaller than the original.
+// Committing the candidate under a free name and retiring the original is
+// the caller's decision, which keeps every destructive step explicit.
 package optimizer
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"io"
+	"image"
+	"image/jpeg"
+	"image/png"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
 
 	"obsidian-image-optimizer/pkg/config"
+	"obsidian-image-optimizer/pkg/fsutil"
+	"obsidian-image-optimizer/pkg/imageinfo"
+	"obsidian-image-optimizer/pkg/imagekind"
 )
 
-// OptimizeResult contains statistics and paths for the optimized image.
-type OptimizeResult struct {
-	OriginalPath   string
-	FinalPath      string
-	RelativePath   string
-	OriginalSize   int64
-	FinalSize      int64
-	SavedBytes     int64
-	SavingsPercent float64
-	Format         string
-	KeptOriginal   bool
+// Options are the encoding settings derived from the configuration.
+type Options struct {
+	Quality       int
+	GifMode       config.GifMode
+	GifLossy      int
+	MaxColors     int
+	GifMaxWidth   int
+	GifDropFrames bool
+	MaxPixels     int64
 }
 
-// Optimize processes an image: backs it up, converts/optimizes, compares size, and resolves winner.
-func Optimize(srcFile, attachedDir, baseDir string, cfg *config.Config) (*OptimizeResult, error) {
-	if err := os.MkdirAll(attachedDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create attached directory: %w", err)
+// OptionsFromConfig extracts the encoding settings from cfg.
+func OptionsFromConfig(cfg *config.Config) Options {
+	return Options{
+		Quality:       cfg.Quality,
+		GifMode:       cfg.GifMode,
+		GifLossy:      cfg.GifLossy,
+		MaxColors:     cfg.MaxColors,
+		GifMaxWidth:   cfg.GifMaxWidth,
+		GifDropFrames: cfg.GifDropFrames,
+		MaxPixels:     cfg.MaxPixels,
+	}
+}
+
+// Result is the outcome of optimising one image.
+type Result struct {
+	// Candidate is a temp file with the optimised image, or "" when the
+	// original should be kept. The caller must commit or remove it.
+	Candidate string
+	// Ext is the extension of the candidate (".webp" or ".gif").
+	Ext string
+	// Encoder is the name of the encoder that produced the candidate.
+	Encoder string
+
+	OriginalSize int64
+	FinalSize    int64
+
+	// KeptReason explains why the original is kept (Candidate == "").
+	KeptReason string
+	// EncodeErr aggregates encoder failures when no encoder succeeded.
+	EncodeErr error
+}
+
+// Improved reports whether a smaller candidate was produced.
+func (r *Result) Improved() bool { return r.Candidate != "" }
+
+// SavingsPercent is the relative size reduction of the candidate.
+func (r *Result) SavingsPercent() float64 {
+	if r.OriginalSize == 0 {
+		return 0
+	}
+	return float64(r.OriginalSize-r.FinalSize) / float64(r.OriginalSize) * 100
+}
+
+// Optimizer converts images using a fixed set of encoder chains.
+type Optimizer struct {
+	opts Options
+
+	still    []Encoder // raster still images -> WebP
+	gifWebP  []Encoder // GIF -> (animated) WebP
+	gifToGIF []Encoder // GIF -> smaller GIF
+}
+
+// New builds an optimizer from the available tools. Encoders whose tool is
+// missing are left out; the pure-Go GIF optimiser is always available.
+func New(tools Toolchain, run CommandRunner, opts Options) *Optimizer {
+	o := &Optimizer{opts: opts}
+
+	if tools.Cwebp != "" {
+		o.still = append(o.still, cwebpEncoder{bin: tools.Cwebp, run: run, quality: opts.Quality})
+	}
+	if tools.Ffmpeg != "" {
+		o.still = append(o.still, ffmpegStillEncoder{bin: tools.Ffmpeg, run: run, quality: opts.Quality})
 	}
 
-	backupDir := filepath.Join(attachedDir, cfg.BackupDir)
-	if err := os.MkdirAll(backupDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create backup directory: %w", err)
+	if tools.Gif2webp != "" {
+		o.gifWebP = append(o.gifWebP, gif2webpEncoder{bin: tools.Gif2webp, run: run, quality: opts.Quality, maxWidth: opts.GifMaxWidth})
+	}
+	if tools.Ffmpeg != "" {
+		o.gifWebP = append(o.gifWebP,
+			ffmpegAnimEncoder{bin: tools.Ffmpeg, run: run, quality: opts.Quality, maxWidth: opts.GifMaxWidth},
+			ffmpegStillEncoder{bin: tools.Ffmpeg, run: run, quality: opts.Quality})
 	}
 
-	fileName := filepath.Base(srcFile)
-	ext := strings.ToLower(filepath.Ext(fileName))
-	baseName := strings.TrimSuffix(fileName, ext)
-
-	// Step 1: Backup original image
-	backupPath := filepath.Join(backupDir, fileName)
-	if err := copyFile(srcFile, backupPath); err != nil {
-		return nil, fmt.Errorf("failed to backup original file %s: %w", srcFile, err)
+	if tools.Gifsicle != "" {
+		o.gifToGIF = append(o.gifToGIF, gifsicleEncoder{bin: tools.Gifsicle, run: run,
+			lossy: opts.GifLossy, maxColors: opts.MaxColors, maxWidth: opts.GifMaxWidth})
 	}
+	if tools.Ffmpeg != "" {
+		o.gifToGIF = append(o.gifToGIF, ffmpegPaletteEncoder{bin: tools.Ffmpeg, run: run,
+			maxColors: opts.MaxColors, maxWidth: opts.GifMaxWidth})
+	}
+	o.gifToGIF = append(o.gifToGIF, goGIFEncoder{maxColors: opts.MaxColors,
+		dropFrames: opts.GifDropFrames, maxPixels: opts.MaxPixels})
 
-	origInfo, err := os.Stat(backupPath)
+	return o
+}
+
+// stage is one attempt: an encoder chain producing files with ext.
+type stage struct {
+	chain []Encoder
+	ext   string
+}
+
+// Optimize produces a candidate for the image at srcPath (of the given kind)
+// in workDir. It returns an error only for unexpected I/O failures or
+// cancellation; images that cannot be improved yield a Result with a reason.
+func (o *Optimizer) Optimize(ctx context.Context, srcPath string, kind imagekind.Kind, workDir string) (*Result, error) {
+	info, err := os.Stat(srcPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to stat backup file: %w", err)
+		return nil, err
 	}
-	origSize := origInfo.Size()
+	res := &Result{OriginalSize: info.Size(), FinalSize: info.Size()}
 
-	var candidatePath string
-	var candidateFormat string
+	src := Source{Path: srcPath, Kind: kind}
+	var stages []stage
 
-	// Step 2: Convert/Compress
-	if ext == ".gif" {
-		gifRes, err := ProcessGIF(backupPath, attachedDir, cfg)
+	switch kind {
+	case imagekind.GIF:
+		gi, err := scanGIF(srcPath)
 		if err != nil {
-			// On error, fallback to keeping original
-			if cfg.Verbose {
-				fmt.Printf("[Optimizer] GIF processing error (%v), keeping original\n", err)
-			}
-			return fallbackToOriginal(backupPath, attachedDir, baseDir, fileName, origSize, ext)
+			res.KeptReason = fmt.Sprintf("unreadable GIF: %v", err)
+			return res, nil
 		}
+		src.Width, src.Height, src.Frames = gi.Width, gi.Height, gi.Frames
+		stages = o.gifStages()
 
-		if gifRes.IsStatic {
-			// Static GIF -> convert to WebP
-			candidatePath, err = encodeToWebp(backupPath, attachedDir, baseName, cfg.Quality)
-			if err != nil {
-				return fallbackToOriginal(backupPath, attachedDir, baseDir, fileName, origSize, ext)
-			}
-			candidateFormat = "webp"
-		} else {
-			candidatePath = gifRes.CandidatePath
-			if gifRes.ConvertedToWebp {
-				candidateFormat = "webp"
-			} else {
-				candidateFormat = "gif"
-			}
+	case imagekind.JPEG, imagekind.PNG, imagekind.TIFF, imagekind.WebP, imagekind.BMP:
+		if animated(srcPath, kind) {
+			res.KeptReason = "animated image (would lose its animation)"
+			return res, nil
 		}
-	} else if ext == ".svg" {
-		// Vector SVG is usually already optimal for text/diagrams
-		return fallbackToOriginal(backupPath, attachedDir, baseDir, fileName, origSize, ext)
-	} else {
-		// JPEG, PNG, WebP, BMP, TIFF -> convert to WebP with configured quality
-		var err error
-		candidatePath, err = encodeToWebp(backupPath, attachedDir, baseName, cfg.Quality)
+		upright, cleanup, err := o.uprightSource(src, workDir)
 		if err != nil {
-			if cfg.Verbose {
-				fmt.Printf("[Optimizer] WebP encode error for %s: %v, keeping original\n", fileName, err)
-			}
-			return fallbackToOriginal(backupPath, attachedDir, baseDir, fileName, origSize, ext)
+			res.KeptReason = fmt.Sprintf("cannot apply EXIF orientation: %v", err)
+			return res, nil
 		}
-		candidateFormat = "webp"
+		defer cleanup()
+		src = upright
+		stages = []stage{{chain: o.still, ext: ".webp"}}
+
+	case imagekind.SVG:
+		res.KeptReason = "vector image"
+		return res, nil
+
+	default:
+		res.KeptReason = "unsupported format"
+		return res, nil
 	}
 
-	// Step 3: Size comparison
-	candInfo, err := os.Stat(candidatePath)
-	if err != nil {
-		return fallbackToOriginal(backupPath, attachedDir, baseDir, fileName, origSize, ext)
+	if len(stages) == 0 {
+		res.KeptReason = "GIF mode keep"
+		return res, nil
 	}
-	candSize := candInfo.Size()
 
-	// Condition: "если размер новой картинки уменьшился по сравнению со старым, то оставляем новую,
-	// если нет, исходник не удаляем, удаляем новую."
-	if candSize < origSize {
-		// Candidate is lighter -> keep candidate!
-		finalPath := candidatePath
-		relPath, _ := filepath.Rel(baseDir, finalPath)
-		// Ensure forward slashes for markdown compatibility
-		relPath = filepath.ToSlash(relPath)
-
-		savedBytes := origSize - candSize
-		savingsPct := float64(savedBytes) / float64(origSize) * 100
-
-		// Clean up srcFile if it was a temporary downloaded file
-		if srcFile != backupPath && srcFile != candidatePath {
-			_ = os.Remove(srcFile)
+	var encodeErrs []error
+	for _, st := range stages {
+		candidate, encoder, err := o.runChain(ctx, st.chain, src, workDir, st.ext)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		if err != nil {
+			encodeErrs = append(encodeErrs, err)
+			continue
 		}
 
-		return &OptimizeResult{
-			OriginalPath:   backupPath,
-			FinalPath:      finalPath,
-			RelativePath:   relPath,
-			OriginalSize:   origSize,
-			FinalSize:      candSize,
-			SavedBytes:     savedBytes,
-			SavingsPercent: savingsPct,
-			Format:         candidateFormat,
-			KeptOriginal:   false,
-		}, nil
+		cinfo, err := os.Stat(candidate)
+		if err != nil {
+			os.Remove(candidate)
+			return nil, err
+		}
+		if cinfo.Size() < res.OriginalSize {
+			res.Candidate, res.Ext, res.Encoder, res.FinalSize = candidate, st.ext, encoder, cinfo.Size()
+			return res, nil
+		}
+		os.Remove(candidate)
+		res.KeptReason = fmt.Sprintf("%s result was not smaller", encoder)
 	}
 
-	// Candidate is larger or equal -> delete candidate, keep original!
-	_ = os.Remove(candidatePath)
-	return fallbackToOriginal(backupPath, attachedDir, baseDir, fileName, origSize, ext)
+	if res.KeptReason == "" {
+		res.EncodeErr = errors.Join(encodeErrs...)
+		res.KeptReason = "no encoder succeeded"
+	}
+	return res, nil
 }
 
-// encodeToWebp decodes standard images and encodes them into lossy WebP at specified quality.
-func encodeToWebp(srcPath, destDir, baseName string, quality int) (string, error) {
-	targetPath := filepath.Join(destDir, baseName+".webp")
-
-	// 1. If cwebp command is installed on the system, use it directly (matches user's bash workflow)
-	if cwebpPath, err := exec.LookPath("cwebp"); err == nil {
-		cmd := exec.Command(cwebpPath, "-q", fmt.Sprintf("%d", quality), "-m", "6", "-metadata", "none", srcPath, "-o", targetPath)
-		if err := cmd.Run(); err == nil {
-			if info, statErr := os.Stat(targetPath); statErr == nil && info.Size() > 0 {
-				return targetPath, nil
-			}
-		}
-	}
-
-	// 2. Fallback to ffmpeg
-	if ffmpegPath, err := exec.LookPath("ffmpeg"); err == nil {
-		cmd := exec.Command(ffmpegPath, "-y", "-nostdin", "-i", srcPath, "-q:v", fmt.Sprintf("%d", quality), targetPath)
-		if err := cmd.Run(); err == nil {
-			if info, statErr := os.Stat(targetPath); statErr == nil && info.Size() > 0 {
-				return targetPath, nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("neither 'cwebp' nor 'ffmpeg' available to encode %s to WebP. Install with: sudo apt install webp ffmpeg", srcPath)
-}
-
-// fallbackToOriginal restores original file into attachedDir.
-func fallbackToOriginal(backupPath, attachedDir, baseDir, fileName string, origSize int64, ext string) (*OptimizeResult, error) {
-	finalPath := filepath.Join(attachedDir, fileName)
-	if backupPath != finalPath {
-		if err := copyFile(backupPath, finalPath); err != nil {
-			return nil, fmt.Errorf("failed to copy original file to destination: %w", err)
-		}
-	}
-
-	relPath, _ := filepath.Rel(baseDir, finalPath)
-	relPath = filepath.ToSlash(relPath)
-
-	return &OptimizeResult{
-		OriginalPath:   backupPath,
-		FinalPath:      finalPath,
-		RelativePath:   relPath,
-		OriginalSize:   origSize,
-		FinalSize:      origSize,
-		SavedBytes:     0,
-		SavingsPercent: 0,
-		Format:         strings.TrimPrefix(ext, "."),
-		KeptOriginal:   true,
-	}, nil
-}
-
-// copyFile copies a file from src to dst.
-func copyFile(src, dst string) error {
-	if src == dst {
+// gifStages returns the attempts for a GIF according to the GIF mode.
+func (o *Optimizer) gifStages() []stage {
+	webp := stage{chain: o.gifWebP, ext: ".webp"}
+	toGIF := stage{chain: o.gifToGIF, ext: ".gif"}
+	switch o.opts.GifMode {
+	case config.GifModeKeep:
 		return nil
+	case config.GifModeWebp:
+		return []stage{webp}
+	case config.GifModeOptimize:
+		return []stage{toGIF}
+	default: // auto
+		return []stage{webp, toGIF}
 	}
-	in, err := os.Open(src)
+}
+
+var errNoEncoder = errors.New("no encoder available (install cwebp, gif2webp, gifsicle or ffmpeg)")
+
+// runChain tries the supporting encoders in order and returns the first
+// non-empty output as a temp file in workDir.
+func (o *Optimizer) runChain(ctx context.Context, chain []Encoder, src Source, workDir, ext string) (string, string, error) {
+	tmp, err := fsutil.TempSibling(workDir, ext)
+	if err != nil {
+		return "", "", err
+	}
+
+	var errs []error
+	for _, enc := range chain {
+		if !enc.Supports(src) {
+			continue
+		}
+		if err := enc.Encode(ctx, src, tmp); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", enc.Name(), err))
+			if ctx.Err() != nil {
+				break
+			}
+			continue
+		}
+		if info, err := os.Stat(tmp); err != nil || info.Size() == 0 {
+			errs = append(errs, fmt.Errorf("%s: produced no output", enc.Name()))
+			continue
+		}
+		return tmp, enc.Name(), nil
+	}
+
+	os.Remove(tmp)
+	if len(errs) == 0 {
+		return "", "", errNoEncoder
+	}
+	return "", "", errors.Join(errs...)
+}
+
+// uprightSource returns a source that displays upright. cwebp ignores the
+// EXIF Orientation tag, so rotated JPEGs (typical for phone photos) are
+// rotated in Go and handed over as a lossless PNG temp file.
+func (o *Optimizer) uprightSource(src Source, workDir string) (Source, func(), error) {
+	noop := func() {}
+	if src.Kind != imagekind.JPEG {
+		return src, noop, nil
+	}
+
+	f, err := os.Open(src.Path)
+	if err != nil {
+		return src, noop, err
+	}
+	defer f.Close()
+
+	orientation, err := imageinfo.JPEGOrientation(f)
+	if err != nil || orientation == imageinfo.OrientationNormal {
+		return src, noop, nil
+	}
+
+	if _, err := f.Seek(0, 0); err != nil {
+		return src, noop, err
+	}
+	cfg, err := jpeg.DecodeConfig(f)
+	if err != nil {
+		return src, noop, err
+	}
+	if int64(cfg.Width)*int64(cfg.Height) > o.opts.MaxPixels {
+		return src, noop, fmt.Errorf("%w: %dx%d", errTooManyPixels, cfg.Width, cfg.Height)
+	}
+	if _, err := f.Seek(0, 0); err != nil {
+		return src, noop, err
+	}
+	img, err := jpeg.Decode(f)
+	if err != nil {
+		return src, noop, err
+	}
+
+	tmp, err := fsutil.TempSibling(workDir, ".png")
+	if err != nil {
+		return src, noop, err
+	}
+	cleanup := func() { os.Remove(tmp) }
+	if err := writePNG(tmp, imageinfo.ApplyOrientation(img, orientation)); err != nil {
+		cleanup()
+		return src, noop, err
+	}
+	return Source{Path: tmp, Kind: imagekind.PNG}, cleanup, nil
+}
+
+func writePNG(path string, img image.Image) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0)
 	if err != nil {
 		return err
 	}
-	defer in.Close()
-
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
+	enc := png.Encoder{CompressionLevel: png.BestSpeed}
+	if err := enc.Encode(f, img); err != nil {
+		f.Close()
 		return err
 	}
-	defer out.Close()
+	return f.Close()
+}
 
-	_, err = io.Copy(out, in)
-	return err
+func scanGIF(path string) (imageinfo.GIFInfo, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return imageinfo.GIFInfo{}, err
+	}
+	defer f.Close()
+	return imageinfo.ScanGIF(f)
+}
+
+// animated reports whether a WebP or PNG file contains an animation.
+func animated(path string, kind imagekind.Kind) bool {
+	if kind != imagekind.WebP && kind != imagekind.PNG {
+		return false
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	if kind == imagekind.WebP {
+		return imageinfo.IsAnimatedWebP(f)
+	}
+	return imageinfo.IsAnimatedPNG(f)
 }

@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install image tools for integration tests
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends webp gifsicle ffmpeg
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Files need gofmt:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: go mod tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@2024.1.1 ./...
+
+      - name: Test
+        run: go test -race -cover ./...
+
+      - name: Build
+        run: go build -o bin/obsidian-img-opt ./cmd/obsidian-img-opt
+
+  plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check plugin syntax
+        run: node --check obsidian-plugin/main.js
+
+      - name: Validate manifest
+        run: node -e "JSON.parse(require('fs').readFileSync('obsidian-plugin/manifest.json', 'utf8'))"

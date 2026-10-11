@@ -32,5 +32,5 @@ bin/
 /.claude/
 
 # Optimization artifacts & caches
-attached/
+attachments/
 .originals_backup/

@@ -1,9 +1,13 @@
-// RemoteImage is a Markdown embed ![alt](https://…) found in a note.
+// RemoteImage is an embed of a web image found in a note: a Markdown embed
+// ![alt](https://…) or an HTML <img src="https://…"> tag.
 export interface RemoteImage {
-  start: number; // offset of "!"
-  end: number; // offset after ")"
+  kind: 'markdown' | 'html';
+  start: number; // offset of "!" or "<"
+  end: number; // offset after ")" or ">"
   alt: string;
   url: string;
+  /** Display width from <img width="…">, kept when the embed is rewritten. */
+  width?: string;
 }
 
 interface Range {
@@ -11,38 +15,39 @@ interface Range {
   end: number;
 }
 
-// findRemoteImages returns the Markdown embeds of http(s) images, skipping
-// code blocks, inline code and comments, where links are only text.
+// findRemoteImages returns the embeds of http(s) images in document order,
+// skipping code blocks, inline code and comments, where links are only text.
 export function findRemoteImages(text: string): RemoteImage[] {
-  const skipped = ignoredRanges(text);
+  const isIgnored = rangeChecker(ignoredRanges(text));
   const images: RemoteImage[] = [];
-  let skipIndex = 0;
 
-  for (let i = text.indexOf('![');
-    i !== -1;
-    i = text.indexOf('![', i + 1)) {
-    while (skipIndex < skipped.length && skipped[skipIndex].end <= i) skipIndex++;
-    const range = skipped[skipIndex];
-    if (range && range.start <= i) {
-      i = range.end - 1;
-      continue;
-    }
-    if (i > 0 && text[i - 1] === '\\') continue;
+  for (let i = text.indexOf('!['); i !== -1; i = text.indexOf('![', i + 1)) {
+    if (isIgnored(i) || (i > 0 && text[i - 1] === '\\')) continue;
     const image = parseEmbed(text, i);
     if (image) {
       images.push(image);
       i = image.end - 1;
     }
   }
-  return images;
+  for (const match of text.matchAll(/<img\b[^>]*>/gi)) {
+    if (isIgnored(match.index)) continue;
+    const image = parseImgTag(match[0], match.index);
+    if (image) images.push(image);
+  }
+
+  images.sort((a, b) => a.start - b.start);
+  // An <img> written inside the alt text of a Markdown embed is not an embed.
+  return images.filter((image, i) => i === 0 || image.start >= images[i - 1].end);
 }
 
-// replaceImages swaps each embed for its replacement, keyed by URL.
-export function replaceImages(text: string, replacements: ReadonlyMap<string, string>): string {
+// replaceImages rewrites embeds: replace returns the new text for an embed,
+// or undefined to keep it. Each occurrence is replaced on its own, so two
+// embeds of one URL keep their own alt text and width.
+export function replaceImages(text: string, replace: (image: RemoteImage) => string | undefined): string {
   let result = '';
   let last = 0;
   for (const image of findRemoteImages(text)) {
-    const replacement = replacements.get(image.url);
+    const replacement = replace(image);
     if (replacement === undefined) continue;
     result += text.slice(last, image.start) + replacement;
     last = image.end;
@@ -104,7 +109,7 @@ function parseEmbed(text: string, start: number): RemoteImage | null {
   }
   if (text[i] !== ')') return null;
   if (!/^https?:\/\//i.test(url)) return null;
-  return { start, end: i + 1, alt, url };
+  return { kind: 'markdown', start, end: i + 1, alt, url };
 }
 
 // ignoredRanges lists fenced code blocks, inline code spans, HTML comments
@@ -199,4 +204,56 @@ function findClosingRun(text: string, from: number, n: number, unclosed: Map<num
   }
   unclosed.set(n, limit);
   return -1;
+}
+
+// rangeChecker answers "is offset inside one of these sorted ranges" in
+// O(log n), so notes with large code blocks stay linear overall.
+function rangeChecker(ranges: Range[]): (offset: number) => boolean {
+  return (offset) => {
+    let lo = 0;
+    let hi = ranges.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (offset < ranges[mid].start) hi = mid - 1;
+      else if (offset >= ranges[mid].end) lo = mid + 1;
+      else return true;
+    }
+    return false;
+  };
+}
+
+// parseImgTag reads src (or a lazy-loading data-src when src is a
+// placeholder), alt and width from an <img> tag.
+function parseImgTag(tag: string, start: number): RemoteImage | null {
+  const attrs = new Map<string, string>();
+  const attr = /([^\s=/>]+)\s*(?:=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
+  for (const m of tag.slice(4, -1).matchAll(attr)) {
+    const name = m[1].toLowerCase();
+    if (!attrs.has(name)) attrs.set(name, decodeEntities(m[2] ?? m[3] ?? m[4] ?? ''));
+  }
+  const url = [attrs.get('src'), attrs.get('data-src'), attrs.get('data-original')]
+    .map((v) => v?.trim())
+    .find((v): v is string => !!v && /^https?:\/\//i.test(v));
+  if (!url) return null;
+  const width = attrs.get('width')?.trim();
+  return {
+    kind: 'html',
+    start,
+    end: start + tag.length,
+    alt: attrs.get('alt') ?? '',
+    url,
+    ...(width && /^\d+$/.test(width) ? { width } : {}),
+  };
+}
+
+const NAMED_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0' };
+
+function decodeEntities(value: string): string {
+  return value.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (entity, body: string) => {
+    if (body[0] === '#') {
+      const code = body[1] === 'x' || body[1] === 'X' ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10);
+      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity;
+    }
+    return NAMED_ENTITIES[body.toLowerCase()] ?? entity;
+  });
 }

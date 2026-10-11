@@ -49,6 +49,28 @@ test('stray backticks do not hide later embeds and stay linear', () => {
 
 test('replaceImages rewrites every embed of a URL and keeps the rest', () => {
   const text = 'A ![x](https://x.test/a.png) B ![y](https://x.test/a.png) C ![z](https://x.test/b.png)\n`![x](https://x.test/a.png)`';
-  const result = replaceImages(text, new Map([['https://x.test/a.png', '![[a.webp]]']]));
-  assert.equal(result, 'A ![[a.webp]] B ![[a.webp]] C ![z](https://x.test/b.png)\n`![x](https://x.test/a.png)`');
+  const result = replaceImages(text, (i) => (i.url === 'https://x.test/a.png' ? `![[a.webp|${i.alt}]]` : undefined));
+  assert.equal(result, 'A ![[a.webp|x]] B ![[a.webp|y]] C ![z](https://x.test/b.png)\n`![x](https://x.test/a.png)`');
+});
+
+test('finds <img> tags with src, lazy data-src, entities, alt and width', () => {
+  const text = [
+    '<img src="https://x.test/a.png?w=1&amp;h=2" alt="A" width="300">',
+    "<IMG data-src='https://x.test/lazy.jpg' src='data:image/gif;base64,R0lGOD'>",
+    '<img src="/relative.png"> <img alt="no source">',
+    '`<img src="https://x.test/code.png">`',
+  ].join('\n');
+  const images = findRemoteImages(text);
+  assert.deepEqual(images.map((i) => [i.kind, i.url, i.alt, i.width]), [
+    ['html', 'https://x.test/a.png?w=1&h=2', 'A', '300'],
+    ['html', 'https://x.test/lazy.jpg', '', undefined],
+  ]);
+});
+
+test('markdown and html embeds come back in document order and are both replaced', () => {
+  const text = '<img src="https://x.test/b.png"> then ![a](https://x.test/a.png)';
+  assert.deepEqual(urls(text), ['https://x.test/b.png', 'https://x.test/a.png']);
+  const names: Record<string, string> = { 'https://x.test/b.png': '![[b.webp]]', 'https://x.test/a.png': '![[a.webp]]' };
+  const result = replaceImages(text, (i) => names[i.url]);
+  assert.equal(result, '![[b.webp]] then ![[a.webp]]');
 });

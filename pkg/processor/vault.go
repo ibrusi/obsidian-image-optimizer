@@ -103,8 +103,9 @@ type resolution struct {
 
 // resolve finds the file a local link points to, the way Obsidian does: as
 // a path relative to the note, then relative to the vault root, then by
-// (partial) path anywhere in the vault. Files outside the vault, symlinks
-// and ambiguous names are rejected.
+// (partial) path anywhere in the vault. Files whose real location is outside
+// the vault, symlinked files and ambiguous names are rejected. The returned
+// path is the real one, with symlinked parent folders resolved.
 func (v *vault) resolve(noteDir, linkPath string) (resolution, error) {
 	if linkPath == "" {
 		return resolution{}, errNotFound
@@ -122,13 +123,14 @@ func (v *vault) resolve(noteDir, linkPath string) (resolution, error) {
 
 	outside := false
 	for _, c := range candidates {
-		if !fsutil.IsWithin(allowed, c) {
-			outside = true
+		real, ok := containedFile(allowed, c)
+		if !ok {
+			// The file exists, but its real location is outside the vault
+			// (a ../ link or a symlinked folder): it must not be touched.
+			outside = outside || isRegularFile(c)
 			continue
 		}
-		if isRegularFile(c) {
-			return resolution{path: c}, nil
-		}
+		return resolution{path: real}, nil
 	}
 
 	if v.root != "" {
@@ -154,6 +156,22 @@ func (v *vault) resolve(noteDir, linkPath string) (resolution, error) {
 	return resolution{}, errNotFound
 }
 
+// containedFile returns the real path of a regular file if it stays within
+// root after every symlinked parent folder is resolved. root must be real.
+// A symlink as the file itself is rejected: retiring it would remove the link
+// but keep the file it points to, or worse, follow it.
+func containedFile(root, path string) (string, bool) {
+	if !isRegularFile(path) {
+		return "", false
+	}
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil || !fsutil.IsWithin(root, real) {
+		return "", false
+	}
+	return real, true
+}
+
+// isRegularFile reports whether path is a regular file and not a symlink.
 func isRegularFile(path string) bool {
 	info, err := os.Lstat(path)
 	return err == nil && info.Mode().IsRegular()

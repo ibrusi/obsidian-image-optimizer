@@ -112,8 +112,20 @@ func (p *Processor) run(ctx context.Context) error {
 }
 
 // collectScope determines the vault snapshot and the notes to process.
+//
+// The vault root and the note are resolved to their real paths first: a vault
+// opened through a symlink (iCloud, Dropbox) must still be walked, and every
+// "inside the vault" check compares real locations, never link text.
 func (p *Processor) collectScope() (*vault, []string, error) {
-	root := p.cfg.VaultPath
+	root, err := realPathOf("vault", p.cfg.VaultPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	filePath, err := realPathOf("file", p.cfg.FilePath)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	if root != "" {
 		info, err := os.Stat(root)
 		if err != nil {
@@ -124,16 +136,16 @@ func (p *Processor) collectScope() (*vault, []string, error) {
 		}
 	}
 
-	if p.cfg.FilePath != "" {
-		info, err := os.Stat(p.cfg.FilePath)
+	if filePath != "" {
+		info, err := os.Stat(filePath)
 		if err != nil {
 			return nil, nil, fmt.Errorf("file: %w", err)
 		}
 		if !info.Mode().IsRegular() {
-			return nil, nil, fmt.Errorf("%s is not a regular file", p.cfg.FilePath)
+			return nil, nil, fmt.Errorf("%s is not a regular file", filePath)
 		}
-		if root != "" && !fsutil.IsWithin(root, p.cfg.FilePath) {
-			p.rep.Warn("%s is outside the vault %s; ignoring the vault", p.cfg.FilePath, root)
+		if root != "" && !fsutil.IsWithin(root, filePath) {
+			p.rep.Warn("%s is outside the vault %s; ignoring the vault", filePath, root)
 			root = ""
 		}
 		v := &vault{root: root, images: make(map[string][]string)}
@@ -145,7 +157,7 @@ func (p *Processor) collectScope() (*vault, []string, error) {
 			}
 			v = scanned
 		}
-		return v, []string{p.cfg.FilePath}, nil
+		return v, []string{filePath}, nil
 	}
 
 	p.rep.Info("🔍 Scanning vault: %s", root)
@@ -155,6 +167,18 @@ func (p *Processor) collectScope() (*vault, []string, error) {
 	}
 	p.rep.Info("📄 Found %d markdown file(s)\n", len(v.notes))
 	return v, v.notes, nil
+}
+
+// realPathOf resolves an optional path from the configuration.
+func realPathOf(what, path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	real, err := fsutil.RealPath(path)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", what, err)
+	}
+	return real, nil
 }
 
 // parseNotes reads and parses the target notes.

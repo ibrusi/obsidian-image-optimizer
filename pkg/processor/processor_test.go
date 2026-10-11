@@ -453,3 +453,77 @@ func TestEmptyVault(t *testing.T) {
 		t.Errorf("summary missing:\n%s", h.out)
 	}
 }
+
+// symlink creates a symlink or skips the test where symlinks are unsupported.
+func symlink(t *testing.T, target, link string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unsupported: %v", err)
+	}
+}
+
+func TestResolveRejectsSymlinkedDirOutsideVault(t *testing.T) {
+	outside := t.TempDir()
+	secret := pngBytes(t, 16)
+	if err := os.WriteFile(filepath.Join(outside, "secret.png"), secret, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	h := newHarness(t)
+	h.cfg.OptimizeLocal = true
+	symlink(t, outside, h.path("notes/linked"))
+	content := "![s](linked/secret.png)\n"
+	h.write("notes/a.md", []byte(content))
+
+	h.run()
+
+	if h.read("notes/a.md") != content {
+		t.Errorf("link into a folder outside the vault was rewritten:\n%s", h.read("notes/a.md"))
+	}
+	entries, _ := os.ReadDir(outside)
+	if len(entries) != 1 {
+		t.Fatalf("files outside the vault were touched: %v", entries)
+	}
+	if got, err := os.ReadFile(filepath.Join(outside, "secret.png")); err != nil || !bytes.Equal(got, secret) {
+		t.Errorf("secret.png changed: %v", err)
+	}
+}
+
+func TestSymlinkedDirInsideVaultIsProcessed(t *testing.T) {
+	h := newHarness(t)
+	h.cfg.OptimizeLocal = true
+	h.write("img/pic.png", pngBytes(t, 32))
+	symlink(t, h.path("img"), h.path("notes/alias"))
+	h.write("notes/a.md", []byte("![p](alias/pic.png)\n"))
+
+	h.run()
+
+	if got := h.read("notes/a.md"); got != "![p](alias/pic.webp)\n" {
+		t.Errorf("unexpected note: %q", got)
+	}
+	if !h.exists("img/pic.webp") || h.exists("img/pic.png") {
+		t.Errorf("the real file must be optimised and retired: %v", h.tree())
+	}
+}
+
+func TestVaultRootIsSymlink(t *testing.T) {
+	h := newHarness(t)
+	h.cfg.OptimizeLocal = true
+	h.write("a.md", []byte("![p](pic.png)\n"))
+	h.write("pic.png", pngBytes(t, 32))
+	link := filepath.Join(t.TempDir(), "vault-link")
+	symlink(t, h.vault, link)
+	h.cfg.VaultPath = link
+
+	p := h.run()
+
+	if p.Stats().FilesScanned != 1 {
+		t.Fatalf("notes behind a symlinked vault root were not found: %+v\n%s", p.Stats(), h.out)
+	}
+	if got := h.read("a.md"); got != "![p](pic.webp)\n" {
+		t.Errorf("unexpected note: %q", got)
+	}
+}

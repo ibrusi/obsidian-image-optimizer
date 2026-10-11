@@ -132,3 +132,33 @@ func TestIsWithin(t *testing.T) {
 		}
 	}
 }
+
+func TestRealPath(t *testing.T) {
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(dir, "target")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unsupported: %v", err)
+	}
+
+	tests := []struct {
+		name, path, want string
+	}{
+		{"plain folder", target, target},
+		{"symlinked folder", link, target},
+		{"file below symlink", filepath.Join(link, "a.png"), filepath.Join(link, "a.png")}, // missing: left as is
+		{"missing path", filepath.Join(dir, "nope"), filepath.Join(dir, "nope")},
+	}
+	for _, tt := range tests {
+		got, err := RealPath(tt.path)
+		if err != nil || got != tt.want {
+			t.Errorf("%s: RealPath(%q) = %q, %v; want %q", tt.name, tt.path, got, err, tt.want)
+		}
+	}
+}

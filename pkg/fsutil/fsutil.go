@@ -120,6 +120,21 @@ func CommitUnique(src, dir, stem, ext string) (string, error) {
 	return "", fmt.Errorf("no free file name for %s%s in %s", stem, ext, dir)
 }
 
+// RealPath returns the absolute path with every symlink resolved, so a folder
+// and the files inside it can be compared by their real location. A path
+// that does not exist is returned as an absolute path; callers report it.
+func RealPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	real, err := filepath.EvalSymlinks(abs)
+	if errors.Is(err, fs.ErrNotExist) {
+		return abs, nil
+	}
+	return real, err
+}
+
 // IsWithin reports whether path is root itself or lies inside root.
 // Both paths must be absolute and clean.
 func IsWithin(root, path string) bool {

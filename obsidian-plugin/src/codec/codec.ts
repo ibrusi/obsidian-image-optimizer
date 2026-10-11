@@ -1,6 +1,6 @@
 import WORKER_SOURCE from 'virtual:worker-source';
 import { Engine } from './engine.ts';
-import type { EncoderVariant, FromWorker, StillOptions, ToWorker, WasmBinaries } from './protocol.ts';
+import type { AnimationFrame, AnimationOptions, EncoderVariant, FromWorker, StillOptions, ToWorker, WasmBinaries } from './protocol.ts';
 
 export interface Encoded {
   data: ArrayBuffer;
@@ -14,7 +14,15 @@ export interface Codec {
   readonly variant: EncoderVariant;
   /** Takes ownership of pixels: its buffer may be transferred and detached. */
   encodeStill(pixels: ImageData, options: StillOptions, signal?: AbortSignal): Promise<Encoded>;
+  /** Takes ownership of the frames: their buffers may be transferred and detached. */
+  encodeAnimation(animation: Animation, options: AnimationOptions, signal?: AbortSignal): Promise<Encoded>;
   dispose(): void;
+}
+
+export interface Animation {
+  width: number;
+  height: number;
+  frames: AnimationFrame[];
 }
 
 const STARTUP_TIMEOUT_MS = 10_000;
@@ -62,6 +70,15 @@ export class MainThreadCodec implements Codec {
     });
   }
 
+  encodeAnimation(animation: Animation, options: AnimationOptions, signal?: AbortSignal): Promise<Encoded> {
+    return this.serial.run(async () => {
+      signal?.throwIfAborted();
+      const started = performance.now();
+      const webp = await this.engine.encodeAnimation(animation.width, animation.height, animation.frames, options);
+      return { data: webp.buffer as ArrayBuffer, ms: performance.now() - started };
+    });
+  }
+
   dispose(): void {}
 }
 
@@ -92,18 +109,26 @@ export class WorkerCodec implements Codec {
   }
 
   encodeStill(pixels: ImageData, options: StillOptions, signal?: AbortSignal): Promise<Encoded> {
+    const rgba = pixels.data.buffer as ArrayBuffer;
+    return this.request((id) => ({ type: 'still', id, width: pixels.width, height: pixels.height, rgba, options }), [rgba], signal);
+  }
+
+  encodeAnimation(animation: Animation, options: AnimationOptions, signal?: AbortSignal): Promise<Encoded> {
+    const { width, height, frames } = animation;
+    return this.request((id) => ({ type: 'animation', id, width, height, frames, options }), frames.map((f) => f.rgba), signal);
+  }
+
+  // request sends one job to the worker. Cancelling stops the encoder
+  // mid-image: the worker is terminated and started again for the next job.
+  private request(message: (id: number) => ToWorker, transfer: ArrayBuffer[], signal?: AbortSignal): Promise<Encoded> {
     return this.serial.run(async () => {
       signal?.throwIfAborted();
       const worker = await this.ensureWorker();
       const id = this.nextId++;
-      const rgba = pixels.data.buffer as ArrayBuffer;
       const result = new Promise<Encoded>((resolve, reject) => this.pending.set(id, { resolve, reject }));
-      // Cancelling stops the encoder mid-image: the worker is terminated and
-      // started again for the next request.
       const abort = () => this.restart(new DOMException('Cancelled', 'AbortError'));
       signal?.addEventListener('abort', abort, { once: true });
-      const message: ToWorker = { type: 'still', id, width: pixels.width, height: pixels.height, rgba, options };
-      worker.postMessage(message, [rgba]);
+      worker.postMessage(message(id), transfer);
       try {
         return await result;
       } finally {

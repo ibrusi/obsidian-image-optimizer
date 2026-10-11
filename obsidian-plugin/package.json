@@ -1,6 +1,6 @@
 {
   "name": "obsidian-image-optimizer",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0-beta.2",
   "private": true,
   "type": "module",
   "description": "Obsidian plugin: download images and convert them to WebP on desktop and mobile",
@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@jsquash/webp": "1.5.0",
-    "wasm-feature-detect": "1.9.0"
+    "wasm-feature-detect": "1.9.0",
+    "wasm-webp": "0.1.0"
   }
 }

@@ -4,6 +4,8 @@ import { WASM } from '../../src/codec/assets.ts';
 import { MainThreadCodec, WorkerCodec } from '../../src/codec/codec.ts';
 import { Engine } from '../../src/codec/engine.ts';
 import type { EncoderVariant } from '../../src/codec/protocol.ts';
+import { decodeGif, scanGif } from '../../src/domain/gif.ts';
+import animatedGif from '../fixtures/animated.gif';
 
 export interface Check {
   name: string;
@@ -85,8 +87,71 @@ function equal(a: ArrayBuffer, b: ArrayBuffer): boolean {
 
     const after = await worker.encodeStill(copy(image), options);
     check('the worker restarts after a cancel', equal(after.data, viaWorker.data));
+
+    await checkAnimation(check, worker, inThread);
   } finally {
     worker.dispose();
   }
   return { userAgent: navigator.userAgent, variant: worker.variant, checks };
 };
+
+type CheckFn = (name: string, ok: boolean, detail?: string) => void;
+
+async function checkAnimation(check: CheckFn, worker: WorkerCodec, inThread: MainThreadCodec): Promise<void> {
+  const bytes = new Uint8Array(animatedGif);
+  const info = scanGif(bytes)!;
+  const gif = decodeGif(bytes);
+  check('GIF scan and decode agree on the frame count', gif.frames.length === info.frames && info.frames > 1, `${info.frames} frames`);
+
+  // The browser's own decoder is the reference for compositing.
+  const Decoder = (window as unknown as { ImageDecoder?: any }).ImageDecoder;
+  if (Decoder) {
+    const decoder = new Decoder({ data: bytes, type: 'image/gif' });
+    let mismatches = 0;
+    for (let i = 0; i < gif.frames.length; i++) {
+      const { image } = await decoder.decode({ frameIndex: i });
+      const canvas = document.createElement('canvas');
+      canvas.width = gif.width;
+      canvas.height = gif.height;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(image, 0, 0);
+      image.close();
+      const reference = ctx.getImageData(0, 0, gif.width, gif.height).data;
+      const ours = gif.frames[i].rgba;
+      for (let p = 0; p < ours.length; p += 4) {
+        const alphaDiffers = (ours[p + 3] === 0) !== (reference[p + 3] === 0);
+        const colourDiffers = ours[p + 3] !== 0 && (ours[p] !== reference[p] || ours[p + 1] !== reference[p + 1] || ours[p + 2] !== reference[p + 2]);
+        if (alphaDiffers || colourDiffers) mismatches++;
+      }
+    }
+    decoder.close();
+    check('GIF frames match the browser decoder pixel for pixel', mismatches === 0, `${mismatches} differing pixels`);
+  } else {
+    check('GIF frames match the browser decoder (ImageDecoder unavailable, skipped)', true);
+  }
+
+  const frames = () => gif.frames.map((f) => ({ rgba: f.rgba.slice().buffer, durationMs: f.durationMs }));
+  const animation = () => ({ width: gif.width, height: gif.height, frames: frames() });
+  const viaWorker = await worker.encodeAnimation(animation(), { quality: 40 });
+  const viaMain = await inThread.encodeAnimation(animation(), { quality: 40 });
+  const chunks = riffChunks(new Uint8Array(viaWorker.data));
+  const frameChunks = chunks.filter((c) => c === 'ANMF').length;
+  check('animated WebP has an ANIM chunk and its frames', chunks.includes('ANIM') && frameChunks >= 2 && frameChunks <= gif.frames.length,
+    `${frameChunks} frames, ${viaWorker.data.byteLength} B from a ${bytes.length} B GIF`);
+  check('animated WebP: worker and main thread produce identical bytes', equal(viaWorker.data, viaMain.data));
+  const bitmap = await createImageBitmap(new Blob([viaWorker.data], { type: 'image/webp' }));
+  check('animated WebP decodes', bitmap.width === gif.width && bitmap.height === gif.height);
+  bitmap.close();
+}
+
+// riffChunks lists the top-level chunk types of a WebP file.
+function riffChunks(bytes: Uint8Array): string[] {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const types: string[] = [];
+  for (let offset = 12; offset + 8 <= bytes.length;) {
+    types.push(String.fromCharCode(...bytes.subarray(offset, offset + 4)));
+    const size = view.getUint32(offset + 4, true);
+    offset += 8 + size + (size & 1);
+  }
+  return types;
+}

@@ -108,7 +108,7 @@ export default class ImageOptimizerPlugin extends Plugin {
       vault: new ObsidianVault(this.app),
       links: new ObsidianLinks(this.app),
       http: new ObsidianHttp(),
-      convert: (data, type, s) => convert(data, type, settings, { decode, encodeStill: codec.encodeStill.bind(codec) }, s),
+      convert: (data, type, s) => convert(data, type, settings, { decode, encodeStill: codec.encodeStill.bind(codec), encodeAnimation: codec.encodeAnimation.bind(codec) }, s),
       metadata: new ObsidianMetadata(this.app),
       settings,
       stats,

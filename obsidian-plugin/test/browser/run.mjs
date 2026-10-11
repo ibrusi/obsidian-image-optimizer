@@ -3,7 +3,7 @@
 // WebKit is the engine of Obsidian on iOS, Chromium of desktop and Android.
 import esbuild from 'esbuild';
 import { chromium, webkit } from 'playwright';
-import { workerSourcePlugin } from '../../scripts/worker-source.mjs';
+import { EMSCRIPTEN_WEB, workerSourcePlugin } from '../../scripts/worker-source.mjs';
 
 const engines = { chromium, webkit };
 const requested = (process.argv[2] ?? process.env.PLUGIN_BROWSERS ?? 'chromium,webkit').split(',');
@@ -13,8 +13,9 @@ const { outputFiles } = await esbuild.build({
   bundle: true,
   format: 'iife',
   target: 'es2020',
-  loader: { '.wasm': 'binary' },
+  loader: { '.wasm': 'binary', '.gif': 'binary' },
   logOverride: { 'empty-import-meta': 'silent' },
+  ...EMSCRIPTEN_WEB,
   plugins: [workerSourcePlugin({ minify: false })],
   write: false,
 });
@@ -28,7 +29,9 @@ for (const name of requested) {
   try {
     const page = await browser.newPage();
     page.on('pageerror', (error) => console.error(`  page error: ${error.message}`));
-    await page.setContent('<!doctype html><html><body></body></html>');
+    // A secure (https) origin, so APIs such as ImageDecoder are available.
+    await page.route('https://plugin.test/**', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><body></body></html>' }));
+    await page.goto('https://plugin.test/');
     await page.addScriptTag({ content: script });
     const report = await page.evaluate(() => window.run());
     console.log(`\n${name} (${report.variant}): ${report.userAgent}`);

@@ -3,6 +3,7 @@
 export interface WasmBinaries {
   stillScalar: ArrayBuffer;
   stillSimd: ArrayBuffer;
+  animation: ArrayBuffer;
 }
 
 export interface StillOptions {
@@ -10,11 +11,22 @@ export interface StillOptions {
   method: number;
 }
 
+export interface AnimationOptions {
+  quality: number;
+}
+
+export interface AnimationFrame {
+  /** RGBA pixels of the whole canvas. */
+  rgba: ArrayBuffer;
+  durationMs: number;
+}
+
 export type EncoderVariant = 'simd' | 'scalar';
 
 export type ToWorker =
   | { type: 'init'; wasm: WasmBinaries }
-  | { type: 'still'; id: number; width: number; height: number; rgba: ArrayBuffer; options: StillOptions };
+  | { type: 'still'; id: number; width: number; height: number; rgba: ArrayBuffer; options: StillOptions }
+  | { type: 'animation'; id: number; width: number; height: number; frames: AnimationFrame[]; options: AnimationOptions };
 
 export type FromWorker =
   | { type: 'ready'; variant: EncoderVariant }

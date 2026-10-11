@@ -25,7 +25,9 @@ scope.onmessage = async ({ data: message }) => {
     if (!engine) throw new Error('encoder not initialised');
     const ready = await engine;
     const started = performance.now();
-    const webp = ready.encodeStill(new Uint8Array(message.rgba), message.width, message.height, message.options);
+    const webp = message.type === 'still'
+      ? ready.encodeStill(new Uint8Array(message.rgba), message.width, message.height, message.options)
+      : await ready.encodeAnimation(message.width, message.height, message.frames, message.options);
     const buffer = webp.buffer as ArrayBuffer;
     scope.postMessage({ type: 'done', id: message.id, webp: buffer, ms: performance.now() - started }, [buffer]);
   } catch (error) {

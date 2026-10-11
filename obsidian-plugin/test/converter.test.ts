@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { convert, type ConvertDeps, type ConvertSettings } from '../src/services/converter.ts';
+import { buildGif } from './gif-builder.ts';
 
 const settings: ConvertSettings = { quality: 40, method: 4, minSavingsPercent: 5, gifMode: 'animated-webp', maxMegapixels: 50 };
 
@@ -16,6 +17,10 @@ function deps(outputSize: number, calls: string[] = []): ConvertDeps {
   return {
     decode: async () => { calls.push('decode'); return { width: 1, height: 1, data: new Uint8ClampedArray(4) } as ImageData; },
     encodeStill: async (_p, options) => { calls.push(`encode q${options.quality} m${options.method}`); return { data: new ArrayBuffer(outputSize) }; },
+    encodeAnimation: async (a, options) => {
+      calls.push(`animate ${a.width}x${a.height}x${a.frames.length} q${options.quality} ${a.frames.map((f) => f.durationMs).join(',')}`);
+      return { data: new ArrayBuffer(outputSize) };
+    },
   };
 }
 
@@ -50,4 +55,31 @@ test('WebP is never re-encoded', async () => {
   const result = await convert(new ArrayBuffer(50), 'webp', settings, deps(10, calls));
   assert.equal(result.replaced, false);
   assert.deepEqual(calls, []);
+});
+
+const palette = [[255, 0, 0], [0, 255, 0], [0, 0, 255], [0, 0, 0]];
+const animatedGif = (frames: number, size = 20) => buildGif(size, size, palette,
+  Array.from({ length: frames }, (_, i) => ({ width: size, height: size, indices: new Array(size * size).fill(i % 4), delayCs: 5 }))).buffer as ArrayBuffer;
+
+test('animated GIFs become animated WebP with their frame timing', async () => {
+  const calls: string[] = [];
+  const result = await convert(animatedGif(3), 'gif', settings, deps(10, calls));
+  assert.equal(result.replaced, true);
+  assert.equal(result.ext, 'webp');
+  assert.deepEqual(calls, ['animate 20x20x3 q40 50,50,50']);
+});
+
+test('single-frame GIFs are encoded as still images', async () => {
+  const calls: string[] = [];
+  await convert(animatedGif(1), 'gif', settings, deps(10, calls));
+  assert.deepEqual(calls, ['decode', 'encode q40 m4']);
+});
+
+test('GIFs are kept with gifMode keep, or when the animation is over the budget', async () => {
+  const calls: string[] = [];
+  assert.equal((await convert(animatedGif(3), 'gif', { ...settings, gifMode: 'keep' }, deps(10, calls))).replaced, false);
+  const huge = await convert(animatedGif(30, 200), 'gif', { ...settings, maxMegapixels: 1 }, deps(10, calls));
+  assert.equal(huge.replaced, false);
+  assert.match(huge.detail, /30 frames/);
+  assert.deepEqual(calls, [], 'nothing decoded or encoded');
 });

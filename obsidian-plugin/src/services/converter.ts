@@ -1,7 +1,8 @@
 import { dimensionsOf } from '../domain/dimensions.ts';
+import { decodeGif, scanGif } from '../domain/gif.ts';
 import { worthReplacing } from '../domain/policy.ts';
 import { extensionOf, type ImageType } from '../domain/sniff.ts';
-import type { StillOptions } from '../codec/protocol.ts';
+import type { AnimationFrame, AnimationOptions, StillOptions } from '../codec/protocol.ts';
 import type { PluginSettings } from '../settings.ts';
 
 export interface Converted {
@@ -15,6 +16,11 @@ export interface Converted {
 export interface ConvertDeps {
   decode(source: ArrayBuffer): Promise<ImageData>;
   encodeStill(pixels: ImageData, options: StillOptions, signal?: AbortSignal): Promise<{ data: ArrayBuffer }>;
+  encodeAnimation(
+    animation: { width: number; height: number; frames: AnimationFrame[] },
+    options: AnimationOptions,
+    signal?: AbortSignal,
+  ): Promise<{ data: ArrayBuffer }>;
 }
 
 export type ConvertSettings = Pick<PluginSettings, 'quality' | 'method' | 'minSavingsPercent' | 'gifMode' | 'maxMegapixels'>;
@@ -33,7 +39,12 @@ export async function convert(
   const keep = (detail: string): Converted => ({ data: input, ext: extensionOf(type), replaced: false, detail });
 
   if (type === 'webp') return keep('already WebP');
-  if (type === 'gif') return keep('GIF kept as is');
+  if (type === 'gif') {
+    if (settings.gifMode === 'keep') return keep('GIF kept as is (settings)');
+    const animated = await convertAnimatedGif(input, settings, deps, signal);
+    if (animated) return animated;
+    // A single-frame GIF is a still image: the platform decoder handles it.
+  }
 
   const size = dimensionsOf(new Uint8Array(input), type);
   if (size && size.width * size.height > settings.maxMegapixels * 1e6) {
@@ -51,6 +62,42 @@ export async function convert(
     ext: 'webp',
     replaced: true,
     detail: `${formatBytes(input.byteLength)} → ${formatBytes(encoded.data.byteLength)}`,
+  };
+}
+
+// Decoded frames are held twice, in JavaScript and in the encoder's heap, so
+// animations get half of the pixel budget of still images.
+const ANIMATION_BUDGET_SHARE = 0.5;
+
+// convertAnimatedGif returns null for single-frame GIFs.
+async function convertAnimatedGif(
+  input: ArrayBuffer,
+  settings: ConvertSettings,
+  deps: ConvertDeps,
+  signal?: AbortSignal,
+): Promise<Converted | null> {
+  const keep = (detail: string): Converted => ({ data: input, ext: 'gif', replaced: false, detail });
+  const bytes = new Uint8Array(input);
+  const info = scanGif(bytes);
+  if (!info) return keep('unreadable GIF');
+  if (info.frames <= 1) return null;
+
+  const pixels = info.width * info.height * info.frames;
+  if (pixels > settings.maxMegapixels * 1e6 * ANIMATION_BUDGET_SHARE) {
+    return keep(`animation too large to convert: ${info.frames} frames, ${megapixels(pixels)} MP in total`);
+  }
+  signal?.throwIfAborted();
+  const gif = decodeGif(bytes);
+  const frames = gif.frames.map((f) => ({ rgba: f.rgba.buffer, durationMs: f.durationMs }));
+  const encoded = await deps.encodeAnimation({ width: gif.width, height: gif.height, frames }, { quality: settings.quality }, signal);
+  if (!worthReplacing(input.byteLength, encoded.data.byteLength, settings.minSavingsPercent)) {
+    return keep(`animated WebP saves less than ${settings.minSavingsPercent}% (${formatBytes(encoded.data.byteLength)})`);
+  }
+  return {
+    data: encoded.data,
+    ext: 'webp',
+    replaced: true,
+    detail: `${info.frames} frames, ${formatBytes(input.byteLength)} → ${formatBytes(encoded.data.byteLength)}`,
   };
 }
 

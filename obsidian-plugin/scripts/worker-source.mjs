@@ -1,5 +1,14 @@
 import esbuild from 'esbuild';
 
+// EMSCRIPTEN_WEB makes the Emscripten glue of the encoders take its browser
+// code path everywhere. Obsidian on desktop exposes Node's process object,
+// and in Node mode the glue loads the .wasm with require() relative to
+// import.meta.url, which does not exist in the plugin bundle.
+export const EMSCRIPTEN_WEB = {
+  define: { process: 'undefined' },
+  external: ['module'],
+};
+
 // workerSourcePlugin builds src/codec/worker.ts into a standalone script and
 // exposes it as the default export of "virtual:worker-source", so the worker
 // ships inside main.js and is started from a Blob URL.
@@ -16,6 +25,7 @@ export function workerSourcePlugin({ minify = true } = {}) {
           target: 'es2020',
           platform: 'browser',
           logOverride: { 'empty-import-meta': 'silent' },
+          ...EMSCRIPTEN_WEB,
           minify,
           legalComments: 'none',
           write: false,

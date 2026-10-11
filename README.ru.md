@@ -175,6 +175,14 @@ obsidian-img-opt --vault "/path/to/vault" --output json
    ```
 2. Назначьте горячую клавишу (например, `Ctrl+Alt+I`).
 
+### Прототип: конвертация внутри Obsidian на мобильных
+
+Плагин выше запускает утилиту командной строки, поэтому работает только на
+десктопе. В папке [`prototype/mobile-webp/`](prototype/mobile-webp/README.ru.md)
+лежит прототип, который скачивает и сжимает картинки в WebP внутри самого
+Obsidian (libwebp на WebAssembly) — на десктопе, Android и iOS, без внешних
+программ.
+
 ---
 
 ## 🧪 Разработка

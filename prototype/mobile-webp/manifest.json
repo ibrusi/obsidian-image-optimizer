@@ -1,0 +1,9 @@
+{
+  "id": "webp-prototype",
+  "name": "WebP Prototype",
+  "version": "0.1.0-prototype.1",
+  "minAppVersion": "1.5.7",
+  "description": "Prototype: downloads images from notes and converts them to WebP on desktop and mobile, without external programs.",
+  "author": "ibrusi",
+  "isDesktopOnly": false
+}

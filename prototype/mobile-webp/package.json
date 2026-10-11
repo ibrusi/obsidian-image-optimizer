@@ -1,0 +1,24 @@
+{
+  "name": "obsidian-webp-prototype",
+  "version": "0.1.0-prototype.1",
+  "private": true,
+  "description": "Prototype: download and convert images to WebP inside Obsidian on any platform",
+  "scripts": {
+    "build": "tsc --noEmit && node esbuild.config.mjs --production",
+    "dev": "node esbuild.config.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts",
+    "test:browser": "node test/browser/run.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "esbuild": "0.28.2",
+    "obsidian": "1.13.1",
+    "playwright": "1.56.1",
+    "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "@jsquash/webp": "1.5.0",
+    "wasm-feature-detect": "1.9.0"
+  }
+}

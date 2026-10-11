@@ -175,6 +175,13 @@ With the **Shell Commands** community plugin:
    ```
 2. Assign a hotkey (for example, `Ctrl+Alt+I`).
 
+### Prototype: conversion inside Obsidian on mobile
+
+The plugin above runs the CLI and therefore works on desktop only. The folder
+[`prototype/mobile-webp/`](prototype/mobile-webp/README.md) holds a prototype
+that downloads and converts images to WebP inside Obsidian itself (WebAssembly
+libwebp), on desktop, Android and iOS, without external programs.
+
 ---
 
 ## 🧪 Development

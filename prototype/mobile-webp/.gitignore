@@ -1,0 +1,3 @@
+node_modules/
+# Build output: published as a release asset, not committed
+main.js

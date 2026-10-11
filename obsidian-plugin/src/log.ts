@@ -7,7 +7,11 @@ export const LOG_PATH = 'image-optimizer-log.md';
 export class RunLog {
   private readonly lines: string[] = [];
 
-  constructor(private readonly vault: Vault) {}
+  private readonly vault: Vault;
+
+  constructor(vault: Vault) {
+    this.vault = vault;
+  }
 
   add(line: string): void {
     this.lines.push(line);

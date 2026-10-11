@@ -23,3 +23,16 @@ export function baseNameFromUrl(url: string): string {
   const limited = Array.from(stem).slice(0, MAX_NAME_LENGTH).join('').trim();
   return limited || 'image';
 }
+
+const MAX_NAME_ATTEMPTS = 10_000;
+
+// availableName returns stem.ext, or stem-1.ext, stem-2.ext… — the first name
+// not taken in the folder. Names are compared case-insensitively: on macOS,
+// Windows and Android storage "Pic.webp" and "pic.webp" are the same file.
+export function availableName(taken: ReadonlySet<string>, stem: string, ext: string): string {
+  for (let i = 0; i < MAX_NAME_ATTEMPTS; i++) {
+    const name = i === 0 ? `${stem}.${ext}` : `${stem}-${i}.${ext}`;
+    if (!taken.has(name.toLowerCase())) return name;
+  }
+  throw new Error(`no free file name for ${stem}.${ext}`);
+}

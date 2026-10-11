@@ -14,11 +14,19 @@ import { findRemoteImages, replaceImages, type RemoteImage } from './domain/link
 import { formatBytes, formatMs, LOG_PATH, RunLog } from './log.ts';
 import { baseNameFromUrl } from './domain/names.ts';
 import { extensionOf, imageTypeOf, isConvertible } from './domain/sniff.ts';
+import { resolveFolder } from './domain/folders.ts';
+import { DEFAULT_SETTINGS, normalizeSettings, type PluginSettings } from './settings.ts';
+import { ObsidianLinks, ObsidianVault } from './services/obsidian-ports.ts';
+import { saveNew } from './services/storage.ts';
+import { ImageOptimizerSettingTab } from './ui/settings-tab.ts';
 
 export default class ImageOptimizerPlugin extends Plugin {
+  settings: PluginSettings = { ...DEFAULT_SETTINGS };
   private busy = false;
 
   async onload(): Promise<void> {
+    this.settings = normalizeSettings(await this.loadData());
+    this.addSettingTab(new ImageOptimizerSettingTab(this.app, this));
     this.addCommand({
       id: 'benchmark',
       name: 'Benchmark the first image of the current note',
@@ -29,6 +37,10 @@ export default class ImageOptimizerPlugin extends Plugin {
       name: 'Download and convert remote images of the current note',
       checkCallback: (checking) => this.withActiveNote(checking, (note) => this.convertNote(note)),
     });
+  }
+
+  async saveSettings(): Promise<void> {
+    await this.saveData(this.settings);
   }
 
   private withActiveNote(checking: boolean, run: (note: TFile) => Promise<void>): boolean {
@@ -161,7 +173,7 @@ export default class ImageOptimizerPlugin extends Plugin {
 
     if (isConvertible(original.type)) {
       const decoded = await decode(original.data);
-      const encoded = await encodeWebp(decoded.pixels);
+      const encoded = await encodeWebp(decoded.pixels, { quality: this.settings.quality, method: this.settings.method });
       if (encoded.data.byteLength < original.data.byteLength) {
         data = toArrayBuffer(encoded.data);
         extension = 'webp';
@@ -172,14 +184,12 @@ export default class ImageOptimizerPlugin extends Plugin {
       }
     }
 
-    const path = await this.app.fileManager.getAvailablePathForAttachment(
-      `${baseNameFromUrl(image.url)}.${extension}`, note.path);
-    const file = await this.app.vault.createBinary(path, data);
-    // The link format follows the user's settings (wikilinks, relative paths).
-    const embed = '!' + this.app.fileManager.generateMarkdownLink(file, note.path, undefined, image.alt || undefined);
+    const folder = resolveFolder(this.settings.folder, note.parent?.path ?? '/');
+    const path = await saveNew(new ObsidianVault(this.app), folder, baseNameFromUrl(image.url), extension, data);
+    const embed = new ObsidianLinks(this.app).embed(path, note.path, image.alt || undefined);
     // process() re-reads the note, so edits made during the download survive.
     await this.app.vault.process(note, (text) => replaceImages(text, new Map([[image.url, embed]])));
-    return `${image.url} → ${file.path}: ${detail}`;
+    return `${image.url} → ${path}: ${detail}`;
   }
 }
 

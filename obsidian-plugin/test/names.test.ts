@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { baseNameFromUrl } from '../src/domain/names.ts';
+import { availableName, baseNameFromUrl } from '../src/domain/names.ts';
 
 test('baseNameFromUrl', () => {
   const cases: Array<[string, string]> = [
@@ -15,4 +15,9 @@ test('baseNameFromUrl', () => {
   for (const [url, want] of cases) {
     assert.equal(baseNameFromUrl(url), want, url);
   }
+});
+
+test('availableName skips taken names case-insensitively', () => {
+  assert.equal(availableName(new Set(), 'pic', 'webp'), 'pic.webp');
+  assert.equal(availableName(new Set(['pic.webp', 'pic-1.webp']), 'Pic', 'webp'), 'Pic-2.webp');
 });

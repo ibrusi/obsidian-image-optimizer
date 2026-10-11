@@ -22,10 +22,10 @@ the desktop CLI (`-q 40 -m 6`), so the output matches the CLI byte for byte.
 **With BRAT** (desktop, Android, iOS): install the *BRAT* community plugin,
 run *BRAT: Add a beta plugin for testing*, enter
 `ibrusi/obsidian-local-image-small` and choose the version
-`0.1.0-prototype.1`. Then enable *WebP Prototype* in *Settings → Community plugins*.
+`0.1.0-prototype.2`. Then enable *WebP Prototype* in *Settings → Community plugins*.
 
 **Manually**: download `webp-prototype.zip` from the release
-[`0.1.0-prototype.1`](https://github.com/ibrusi/obsidian-local-image-small/releases/tag/0.1.0-prototype.1),
+[`0.1.0-prototype.2`](https://github.com/ibrusi/obsidian-local-image-small/releases/tag/0.1.0-prototype.2),
 unpack it into `<vault>/.obsidian/plugins/` (the folder `.obsidian` is
 hidden; on Android enable hidden files in the file manager), restart
 Obsidian and enable the plugin.

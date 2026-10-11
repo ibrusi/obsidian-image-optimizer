@@ -131,6 +131,7 @@ export default class WebpPrototypePlugin extends Plugin {
       return;
     }
 
+    log.add(`platform: ${platformName()}; ${navigator.userAgent}`);
     const notice = new Notice('', 0);
     let index = 0;
     let saved = 0;

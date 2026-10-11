@@ -22,11 +22,11 @@ iOS — без установки чего-либо в ОС.
 
 **Через BRAT** (десктоп, Android, iOS): установите плагин сообщества *BRAT*,
 выполните *BRAT: Add a beta plugin for testing*, введите
-`ibrusi/obsidian-local-image-small` и выберите версию `0.1.0-prototype.1`.
+`ibrusi/obsidian-local-image-small` и выберите версию `0.1.0-prototype.2`.
 Затем включите *WebP Prototype* в *Настройки → Сторонние плагины*.
 
 **Вручную**: скачайте `webp-prototype.zip` из релиза
-[`0.1.0-prototype.1`](https://github.com/ibrusi/obsidian-local-image-small/releases/tag/0.1.0-prototype.1),
+[`0.1.0-prototype.2`](https://github.com/ibrusi/obsidian-local-image-small/releases/tag/0.1.0-prototype.2),
 распакуйте в `<хранилище>/.obsidian/plugins/` (папка `.obsidian` скрытая; на
 Android включите показ скрытых файлов в файловом менеджере), перезапустите
 Obsidian и включите плагин.

@@ -1,6 +1,6 @@
 {
   "name": "obsidian-webp-prototype",
-  "version": "0.1.0-prototype.1",
+  "version": "0.1.0-prototype.2",
   "private": true,
   "description": "Prototype: download and convert images to WebP inside Obsidian on any platform",
   "scripts": {

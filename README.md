@@ -1,6 +1,6 @@
 # Obsidian Image Optimizer (Go)
 
-[English](README.md) | [Русский](README_RU.md)
+[English](README.md) | [Русский](README.ru.md)
 
 A high-performance Go CLI utility and [Obsidian](https://obsidian.md) plugin that automates the entire image processing workflow in your notes:
 

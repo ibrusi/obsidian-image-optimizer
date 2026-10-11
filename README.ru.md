@@ -1,6 +1,6 @@
 # Obsidian Image Optimizer (Go)
 
-[English](README.md) | [Русский](README_RU.md)
+[English](README.md) | [Русский](README.ru.md)
 
 Высокопроизводительная утилита и плагин для [Obsidian](https://obsidian.md) на Go, автоматизирующая полный цикл работы с изображениями в заметках:
 1. **Скачивание веб-картинок** по ссылкам (`http(s)://`) в папку `attachments/` рядом со статьями.

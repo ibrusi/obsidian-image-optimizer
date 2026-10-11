@@ -1,4 +1,5 @@
 import esbuild from 'esbuild';
+import { workerSourcePlugin } from './scripts/worker-source.mjs';
 
 const production = process.argv.includes('--production');
 
@@ -16,6 +17,7 @@ await esbuild.build({
   // The Emscripten glue reads import.meta.url only to locate the .wasm file;
   // the encoder passes the compiled module and locateFile instead.
   logOverride: { 'empty-import-meta': 'silent' },
+  plugins: [workerSourcePlugin({ minify: production })],
   minify: production,
   sourcemap: production ? false : 'inline',
   legalComments: 'eof',

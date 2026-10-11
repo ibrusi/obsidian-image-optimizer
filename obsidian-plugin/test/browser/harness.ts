@@ -1,12 +1,20 @@
-// Runs inside the browser under test: encodes a synthetic photo-like image
-// with every available encoder and decodes the result back.
-import { detectVariant, encodeWebp, encodeWithCanvas, type EncoderVariant } from '../../src/codec/encoder.ts';
+// Runs inside the browser under test (Chromium = desktop/Android Obsidian,
+// WebKit = iOS Obsidian) against the real WebAssembly encoders.
+import { WASM } from '../../src/codec/assets.ts';
+import { MainThreadCodec, WorkerCodec } from '../../src/codec/codec.ts';
+import { Engine } from '../../src/codec/engine.ts';
+import type { EncoderVariant } from '../../src/codec/protocol.ts';
 
-export interface SmokeReport {
+export interface Check {
+  name: string;
+  ok: boolean;
+  detail: string;
+}
+
+export interface Report {
   userAgent: string;
-  preferred: EncoderVariant;
-  variants: Array<{ variant: EncoderVariant; bytes: number; ms: number; roundTrip: boolean }>;
-  canvasType: string;
+  variant: EncoderVariant;
+  checks: Check[];
 }
 
 function syntheticImage(width: number, height: number): ImageData {
@@ -31,29 +39,54 @@ function syntheticImage(width: number, height: number): ImageData {
   return pixels;
 }
 
-async function decodesTo(data: Uint8Array, width: number, height: number): Promise<boolean> {
-  const header = String.fromCharCode(...data.subarray(0, 4)) + String.fromCharCode(...data.subarray(8, 12));
+const copy = (img: ImageData) => new ImageData(new Uint8ClampedArray(img.data), img.width, img.height);
+
+async function decodesTo(data: ArrayBuffer, width: number, height: number): Promise<boolean> {
+  const bytes = new Uint8Array(data);
+  const header = String.fromCharCode(...bytes.subarray(0, 4)) + String.fromCharCode(...bytes.subarray(8, 12));
   if (header !== 'RIFFWEBP') return false;
-  const bitmap = await createImageBitmap(new Blob([data as BlobPart], { type: 'image/webp' }));
+  const bitmap = await createImageBitmap(new Blob([data], { type: 'image/webp' }));
   const ok = bitmap.width === width && bitmap.height === height;
   bitmap.close();
   return ok;
 }
 
-(window as unknown as { smoke: () => Promise<SmokeReport> }).smoke = async () => {
-  const pixels = syntheticImage(1200, 800);
-  const preferred = await detectVariant();
-  const report: SmokeReport = { userAgent: navigator.userAgent, preferred, variants: [], canvasType: '' };
-  const variants: EncoderVariant[] = preferred === 'simd' ? ['simd', 'scalar'] : ['scalar'];
-  for (const variant of variants) {
-    const encoded = await encodeWebp(pixels, { variant });
-    report.variants.push({
-      variant,
-      bytes: encoded.data.byteLength,
-      ms: Math.round(encoded.ms),
-      roundTrip: await decodesTo(encoded.data, pixels.width, pixels.height),
-    });
+function equal(a: ArrayBuffer, b: ArrayBuffer): boolean {
+  if (a.byteLength !== b.byteLength) return false;
+  const x = new Uint8Array(a);
+  const y = new Uint8Array(b);
+  return x.every((v, i) => v === y[i]);
+}
+
+(window as unknown as { run: () => Promise<Report> }).run = async () => {
+  const checks: Check[] = [];
+  const check = (name: string, ok: boolean, detail = '') => checks.push({ name, ok, detail });
+  const image = syntheticImage(1200, 800);
+  const options = { quality: 40, method: 4 };
+
+  const worker = await WorkerCodec.start(WASM);
+  const inThread = new MainThreadCodec(await Engine.create(WASM));
+  try {
+    const viaWorker = await worker.encodeStill(copy(image), options);
+    const viaMain = await inThread.encodeStill(copy(image), options);
+    check('worker output decodes', await decodesTo(viaWorker.data, image.width, image.height),
+      `${viaWorker.data.byteLength} B in ${Math.round(viaWorker.ms)} ms`);
+    check('worker and main thread produce identical bytes', equal(viaWorker.data, viaMain.data),
+      `${viaWorker.data.byteLength} vs ${viaMain.data.byteLength} B`);
+
+    const both = await Promise.all([1, 2, 3].map(() => worker.encodeStill(copy(image), options)));
+    check('queued requests all complete', both.every((r) => equal(r.data, viaWorker.data)));
+
+    const controller = new AbortController();
+    const cancelled = worker.encodeStill(copy(syntheticImage(3000, 2000)), { quality: 40, method: 6 }, controller.signal);
+    setTimeout(() => controller.abort(), 20);
+    const outcome = await cancelled.then(() => 'finished', (e: Error) => e.name);
+    check('cancel stops the encoder', outcome === 'AbortError', outcome);
+
+    const after = await worker.encodeStill(copy(image), options);
+    check('the worker restarts after a cancel', equal(after.data, viaWorker.data));
+  } finally {
+    worker.dispose();
   }
-  report.canvasType = (await encodeWithCanvas(pixels)).type;
-  return report;
+  return { userAgent: navigator.userAgent, variant: worker.variant, checks };
 };

@@ -35,3 +35,12 @@ test('cancelAll aborts the running job and drops queued ones', async () => {
   await assert.rejects(queued, { name: 'AbortError' });
   assert.equal(queuedStarted, false);
 });
+
+test('jobs queued as not cancellable survive cancelAll', async () => {
+  const queue = new JobQueue();
+  const blocker = queue.run(async (signal) => { while (!signal.aborted) await tick(); signal.throwIfAborted(); });
+  const pasted = queue.run(async () => 'saved', false);
+  queue.cancelAll();
+  await assert.rejects(blocker, { name: 'AbortError' });
+  assert.equal(await pasted, 'saved');
+});

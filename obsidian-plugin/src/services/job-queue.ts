@@ -9,9 +9,12 @@ export class JobQueue {
     return this.running > 0;
   }
 
-  run<T>(job: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  // run queues a job. A job that must not be lost (an image pasted from the
+  // clipboard exists nowhere else) is queued with cancellable=false and is
+  // not stopped by cancelAll.
+  run<T>(job: (signal: AbortSignal) => Promise<T>, cancellable = true): Promise<T> {
     const controller = new AbortController();
-    this.controllers.add(controller);
+    if (cancellable) this.controllers.add(controller);
     this.running++;
     const start = () => {
       controller.signal.throwIfAborted();

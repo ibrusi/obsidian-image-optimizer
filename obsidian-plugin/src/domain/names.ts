@@ -36,3 +36,18 @@ export function availableName(taken: ReadonlySet<string>, stem: string, ext: str
   }
   throw new Error(`no free file name for ${stem}.${ext}`);
 }
+
+// Names browsers and apps give to clipboard images instead of a real one.
+const GENERIC_NAMES = new Set(['image', 'blob', 'clipboard', 'screenshot', 'unknown', 'untitled']);
+
+// pastedImageStem names a pasted or dropped file: its own name when it has
+// a meaningful one, otherwise "Pasted image 20261011153000" like Obsidian.
+export function pastedImageStem(fileName: string, now: Date): string {
+  const dot = fileName.lastIndexOf('.');
+  const stem = (dot > 0 ? fileName.slice(0, dot) : fileName).replace(FORBIDDEN, '_').trim();
+  if (stem && !GENERIC_NAMES.has(stem.toLowerCase())) return Array.from(stem).slice(0, MAX_NAME_LENGTH).join('');
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
+    `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  return `Pasted image ${stamp}`;
+}

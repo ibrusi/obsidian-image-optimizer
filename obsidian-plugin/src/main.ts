@@ -4,17 +4,20 @@ import { type Codec, createCodec } from './codec/codec.ts';
 import { decode } from './codec/decode.ts';
 import { LOG_PATH, RunLog } from './log.ts';
 import { convert } from './services/converter.ts';
-import { LocalImages, type LocalContext } from './services/local-images.ts';
+import { JobQueue } from './services/job-queue.ts';
+import type { LocalContext } from './services/local-images.ts';
 import { ObsidianHttp, ObsidianLinks, ObsidianMetadata, ObsidianVault } from './services/obsidian-ports.ts';
-import { processRemoteImages, type RemoteContext } from './services/remote-images.ts';
+import type { RemoteContext } from './services/remote-images.ts';
 import { RunStats } from './services/stats.ts';
+import { optimizeNotes } from './services/vault-run.ts';
+import { ProgressModal } from './ui/progress-modal.ts';
 import { DEFAULT_SETTINGS, normalizeSettings, type PluginSettings } from './settings.ts';
 import { ImageOptimizerSettingTab } from './ui/settings-tab.ts';
 
 export default class ImageOptimizerPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS };
   private codec: Promise<Codec> | null = null;
-  private busy = false;
+  private readonly queue = new JobQueue();
 
   async onload(): Promise<void> {
     this.settings = normalizeSettings(await this.loadData());
@@ -22,11 +25,26 @@ export default class ImageOptimizerPlugin extends Plugin {
     this.addCommand({
       id: 'optimize-note',
       name: 'Optimize images in the current note',
-      checkCallback: (checking) => this.withActiveNote(checking, (note) => this.optimizeNote(note)),
+      checkCallback: (checking) => this.withActiveNote(checking, (note, signal) => this.optimizeNote(note, signal)),
+    });
+    this.addCommand({
+      id: 'optimize-vault',
+      name: 'Optimize images in the whole vault',
+      callback: () => void this.enqueue((signal) => this.optimizeVault(signal)),
+    });
+    this.addCommand({
+      id: 'stop',
+      name: 'Stop image optimization',
+      checkCallback: (checking) => {
+        if (!this.queue.busy) return false;
+        if (!checking) this.queue.cancelAll();
+        return true;
+      },
     });
   }
 
   onunload(): void {
+    this.queue.cancelAll();
     void this.codec?.then((codec) => codec.dispose());
   }
 
@@ -44,51 +62,72 @@ export default class ImageOptimizerPlugin extends Plugin {
     return this.codec;
   }
 
-  private withActiveNote(checking: boolean, run: (note: TFile) => Promise<void>): boolean {
+  private withActiveNote(checking: boolean, run: (note: TFile, signal: AbortSignal) => Promise<void>): boolean {
     const note = this.app.workspace.getActiveFile();
     if (!note || note.extension !== 'md') return false;
-    if (!checking) void this.exclusive(() => run(note));
+    if (!checking) void this.enqueue((signal) => run(note, signal));
     return true;
   }
 
-  // exclusive runs one task at a time: encoding is memory-hungry on phones.
-  private async exclusive(task: () => Promise<void>): Promise<void> {
-    if (this.busy) {
-      new Notice('Image optimization is already running.');
-      return;
-    }
-    this.busy = true;
+  // enqueue runs a job after the ones already queued. Jobs share one queue:
+  // encoding is memory-hungry on phones.
+  private async enqueue(job: (signal: AbortSignal) => Promise<void>): Promise<void> {
+    if (this.queue.busy) new Notice('Image optimization will start when the current one finishes.');
     try {
-      await task();
+      await this.queue.run(job);
     } catch (error) {
+      if (isAbort(error)) {
+        new Notice('Image optimization stopped.');
+        return;
+      }
       new Notice(`Image optimization failed: ${errorText(error)}`);
       console.error('[image-optimizer]', error);
-    } finally {
-      this.busy = false;
     }
   }
 
   // optimizeNote saves the web images of the note locally and converts its
   // local images, rewriting links everywhere in the vault.
-  private async optimizeNote(note: TFile): Promise<void> {
+  private async optimizeNote(note: TFile, signal: AbortSignal): Promise<void> {
     await this.flushEditors(note.path);
     const log = new RunLog(this.app.vault);
     const stats = new RunStats();
     const notice = new Notice('Optimizing images…', 0);
     try {
-      const ctx = await this.context(stats, log);
-      await processRemoteImages(note.path, ctx);
-      if (this.settings.convertLocal) {
-        const local = new LocalImages(ctx);
-        await local.processNote(note.path);
-        await local.retireOriginals();
-      }
+      const ctx = await this.context(stats, log, signal);
+      await optimizeNotes([note.path], ctx, { convertLocal: this.settings.convertLocal, onProgress: () => {} });
     } finally {
       notice.hide();
       for (const line of stats.lines) log.add(line);
       if (this.settings.writeLogNote) await log.flush(`note: ${note.path}`);
       new Notice(stats.total === 0 ? 'No images to optimize in this note.'
         : stats.summary() + (this.settings.writeLogNote ? `. Details: ${LOG_PATH}` : ''));
+    }
+  }
+
+  // optimizeVault processes every note, with a progress window that can stop it.
+  private async optimizeVault(signal: AbortSignal): Promise<void> {
+    const notes = this.app.vault.getMarkdownFiles()
+      .map((file) => file.path)
+      .filter((path) => path !== LOG_PATH)
+      .sort((a, b) => a.localeCompare(b));
+    const log = new RunLog(this.app.vault);
+    const stats = new RunStats();
+    const stop = new AbortController();
+    signal.addEventListener('abort', () => stop.abort(signal.reason), { once: true });
+    const modal = new ProgressModal(this.app, () => stop.abort(new DOMException('Cancelled', 'AbortError')));
+    modal.open();
+    try {
+      const ctx = await this.context(stats, log, stop.signal);
+      await optimizeNotes(notes, ctx, {
+        convertLocal: this.settings.convertLocal,
+        onProgress: (progress) => modal.update(progress, stats.summary()),
+      });
+    } finally {
+      modal.finish();
+      for (const line of stats.lines) log.add(line);
+      if (this.settings.writeLogNote) await log.flush('vault');
+      new Notice(`${stop.signal.aborted ? 'Stopped. ' : ''}${stats.summary()}` +
+        (this.settings.writeLogNote ? `. Details: ${LOG_PATH}` : ''), 10_000);
     }
   }
 
@@ -117,6 +156,10 @@ export default class ImageOptimizerPlugin extends Plugin {
       signal,
     };
   }
+}
+
+function isAbort(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
 }
 
 function errorText(error: unknown): string {

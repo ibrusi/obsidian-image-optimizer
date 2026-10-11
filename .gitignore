@@ -14,9 +14,22 @@ bin/
 *.prof
 
 # OS / Editor files
+# (no trailing slash: must also match non-directory entries, e.g. mount stubs)
 .DS_Store
-.vscode/
-.idea/
+.vscode
+.idea
+
+# Local shell, git & tooling configs (never part of the project)
+/.bash_profile
+/.bashrc
+/.profile
+/.zprofile
+/.zshrc
+/.gitconfig
+/.gitmodules
+/.ripgreprc
+/.mcp.json
+/.claude/
 
 # Optimization artifacts & caches
 attached/

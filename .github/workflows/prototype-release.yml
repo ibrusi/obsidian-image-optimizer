@@ -1,0 +1,54 @@
+name: WebP prototype release
+
+# Publishes the mobile WebP prototype as a pre-release, installable with BRAT
+# or by unpacking the zip into <vault>/.obsidian/plugins/.
+on:
+  push:
+    tags: ['*-prototype.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: prototype/mobile-webp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: prototype/mobile-webp/package-lock.json
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - name: Check that the tag matches the manifest version
+        run: |
+          version=$(node -p "require('./manifest.json').version")
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match manifest version $version"; exit 1
+          fi
+
+      - name: Package
+        run: |
+          mkdir -p dist/webp-prototype
+          cp main.js manifest.json dist/webp-prototype/
+          (cd dist && zip -r webp-prototype.zip webp-prototype)
+
+      - name: Publish pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            main.js manifest.json dist/webp-prototype.zip \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "WebP prototype $GITHUB_REF_NAME" \
+            --notes "Prototype of in-app WebP conversion for desktop and mobile. Not for production vaults: test on a copy. Installation and test steps: prototype/mobile-webp/README.md."

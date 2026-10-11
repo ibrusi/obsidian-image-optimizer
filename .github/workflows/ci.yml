@@ -59,3 +59,29 @@ jobs:
 
       - name: Validate manifest
         run: node -e "JSON.parse(require('fs').readFileSync('obsidian-plugin/manifest.json', 'utf8'))"
+
+  webp-prototype:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: prototype/mobile-webp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 22.18+ runs the TypeScript unit tests without a build step.
+          node-version: 22
+          cache: npm
+          cache-dependency-path: prototype/mobile-webp/package-lock.json
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      # WebKit is the engine of Obsidian on iOS, Chromium of desktop and Android.
+      - name: Install browsers
+        run: npx playwright install --with-deps chromium webkit
+      - name: Encoder smoke test in Chromium and WebKit
+        run: npm run test:browser

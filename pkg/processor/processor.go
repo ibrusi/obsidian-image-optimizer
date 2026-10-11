@@ -1,346 +1,333 @@
+// Package processor orchestrates a run in explicit phases:
+//
+//  1. collect – find the notes in scope and parse their image embeds;
+//  2. plan    – group embeds into unique download / local optimisation jobs;
+//  3. execute – download and optimise images in parallel (skipped in dry-run);
+//  4. apply   – re-read every affected note and rewrite its links atomically;
+//  5. retire  – move replaced local originals to the backup folder, but only
+//     when every referencing note was written and nothing else in the vault
+//     still mentions them.
+//
+// Destructive steps happen strictly after the steps they depend on succeed,
+// so an interrupted or failed run never leaves a note pointing to a missing file.
 package processor
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 
 	"obsidian-image-optimizer/pkg/config"
 	"obsidian-image-optimizer/pkg/downloader"
+	"obsidian-image-optimizer/pkg/fsutil"
+	"obsidian-image-optimizer/pkg/imagekind"
 	"obsidian-image-optimizer/pkg/optimizer"
 	"obsidian-image-optimizer/pkg/parser"
+	"obsidian-image-optimizer/pkg/report"
 )
 
-// SummaryStats contains metrics of the optimization run.
-type SummaryStats struct {
-	TotalFilesScanned   int
-	TotalFilesModified  int
-	TotalImagesFound    int
-	TotalWebpConverted  int
-	TotalKeptOriginal   int
-	TotalErrors         int
-	TotalOriginalBytes  int64
-	TotalOptimizedBytes int64
-}
-
-// FormatHumanBytes formats a byte count into a human-readable string (KB, MB).
-func FormatHumanBytes(b int64) string {
-	const unit = 1024
-	if b < unit {
-		return fmt.Sprintf("%d B", b)
-	}
-	div, exp := int64(unit), 0
-	for n := b / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.2f %cB", float64(b)/float64(div), "KMGTPE"[exp])
-}
+// dirPerm is the permission of folders created for attachments and backups.
+const dirPerm = 0o755
 
 // Processor manages the processing pipeline for markdown files and vaults.
 type Processor struct {
 	cfg        *config.Config
+	rep        report.Reporter
 	downloader *downloader.Downloader
-	stats      SummaryStats
+	optimizer  *optimizer.Optimizer
+
+	stats report.Summary
 }
 
-// NewProcessor creates an initialized Processor.
-func NewProcessor(cfg *config.Config) *Processor {
-	return &Processor{
-		cfg:        cfg,
-		downloader: downloader.NewDownloader(cfg.TimeoutSeconds, cfg.UserAgent),
-	}
+// New creates a Processor from its collaborators.
+func New(cfg *config.Config, rep report.Reporter, dl *downloader.Downloader, opt *optimizer.Optimizer) *Processor {
+	return &Processor{cfg: cfg, rep: rep, downloader: dl, optimizer: opt}
 }
 
 // Stats returns the accumulated statistics.
-func (p *Processor) Stats() SummaryStats {
+func (p *Processor) Stats() report.Summary {
 	return p.stats
 }
 
-// Run executes the optimization process based on the config.
+// note is a markdown file in scope together with the changes planned for it.
+type note struct {
+	path string
+	dir  string
+
+	remoteRefs []parser.ImageRef
+	localRefs  []parser.ImageRef
+
+	// remoteUpdates maps URL -> new relative path; localUpdates maps a local
+	// target (as written) -> new target. Filled after execution.
+	remoteUpdates map[string]string
+	localUpdates  map[string]string
+}
+
+func (n *note) hasUpdates() bool {
+	return len(n.remoteUpdates) > 0 || len(n.localUpdates) > 0
+}
+
+// Run executes the optimisation according to the configuration. The summary
+// is always reported, also when the run is interrupted.
 func (p *Processor) Run(ctx context.Context) error {
-	if p.cfg.FilePath != "" {
-		return p.ProcessFile(ctx, p.cfg.FilePath)
+	p.stats = report.Summary{DryRun: p.cfg.DryRun}
+	err := p.run(ctx)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		p.stats.Interrupted = true
 	}
-
-	if p.cfg.VaultPath != "" {
-		return p.ProcessVault(ctx, p.cfg.VaultPath)
-	}
-
-	return fmt.Errorf("no file or vault specified")
+	p.rep.Summary(p.stats)
+	return err
 }
 
-// ProcessVault recursively scans and processes all markdown files in a vault directory.
-func (p *Processor) ProcessVault(ctx context.Context, vaultDir string) error {
-	fmt.Printf("🔍 Scanning vault: %s\n", vaultDir)
-
-	var mdFiles []string
-
-	err := filepath.WalkDir(vaultDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		name := d.Name()
-		if d.IsDir() {
-			// Skip hidden and internal directories
-			if strings.HasPrefix(name, ".") || name == p.cfg.AttachedDir || name == "node_modules" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		if strings.EqualFold(filepath.Ext(path), ".md") {
-			mdFiles = append(mdFiles, path)
-		}
-		return nil
-	})
-
+func (p *Processor) run(ctx context.Context) error {
+	v, targets, err := p.collectScope()
 	if err != nil {
-		return fmt.Errorf("vault traversal failed: %w", err)
+		return err
 	}
+	p.stats.FilesScanned = len(targets)
 
-	fmt.Printf("📄 Found %d markdown file(s)\n\n", len(mdFiles))
-
-	for _, file := range mdFiles {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		if err := p.ProcessFile(ctx, file); err != nil {
-			fmt.Printf("❌ Error processing %s: %v\n", file, err)
-			p.stats.TotalErrors++
-		}
-	}
-
-	p.printFinalReport()
-	return nil
-}
-
-// ProcessFile processes a single markdown file: extracts links, downloads images, converts to WebP, replaces links.
-func (p *Processor) ProcessFile(ctx context.Context, filePath string) error {
-	p.stats.TotalFilesScanned++
-
-	contentBytes, err := os.ReadFile(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to read file: %w", err)
-	}
-
-	content := string(contentBytes)
-	images := parser.ExtractRemoteImages(content)
-	var localImages []parser.LocalImage
-	if p.cfg.OptimizeLocal {
-		localImages = parser.ExtractLocalImages(content)
-	}
-
-	if len(images) == 0 && len(localImages) == 0 {
-		if p.cfg.Verbose {
-			fmt.Printf("⏩ No compressible images in %s\n", filepath.Base(filePath))
-		}
-		return nil
-	}
-
-	if len(images) > 0 {
-		fmt.Printf("📝 [%s] Found %d remote image(s)\n", filepath.Base(filePath), len(images))
-	}
-	if len(localImages) > 0 {
-		fmt.Printf("📁 [%s] Found %d local image(s) to optimize\n", filepath.Base(filePath), len(localImages))
-	}
-
-	noteDir := filepath.Dir(filePath)
-	attachedDir := filepath.Join(noteDir, p.cfg.AttachedDir)
-
-	urlToRelPath := make(map[string]string)
-
-	for _, img := range images {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		rawURL := img.URL
-		if _, alreadyProcessed := urlToRelPath[rawURL]; alreadyProcessed {
-			continue
-		}
-
-		p.stats.TotalImagesFound++
-		fmt.Printf("   ⬇️  Downloading: %s\n", truncateURL(rawURL, 60))
-
-		if p.cfg.DryRun {
-			urlToRelPath[rawURL] = filepath.Join(p.cfg.AttachedDir, "preview.webp")
-			continue
-		}
-
-		// Download to attached directory
-		dl, err := p.downloader.Download(ctx, rawURL, attachedDir)
-		if err != nil {
-			fmt.Printf("   ⚠️  Failed to download %s: %v\n", rawURL, err)
-			p.stats.TotalErrors++
-			continue
-		}
-
-		// Optimize with WebP & GIF handling
-		optRes, err := optimizer.Optimize(dl.LocalPath, attachedDir, noteDir, p.cfg)
-		if err != nil {
-			fmt.Printf("   ⚠️  Failed to optimize %s: %v\n", dl.Filename, err)
-			p.stats.TotalErrors++
-			continue
-		}
-
-		p.stats.TotalOriginalBytes += optRes.OriginalSize
-		p.stats.TotalOptimizedBytes += optRes.FinalSize
-
-		if optRes.KeptOriginal {
-			p.stats.TotalKeptOriginal++
-			fmt.Printf("   ℹ️  Kept original %s (%s, candidate was not smaller)\n",
-				filepath.Base(optRes.FinalPath), FormatHumanBytes(optRes.FinalSize))
-		} else {
-			p.stats.TotalWebpConverted++
-			fmt.Printf("   ✨ Compressed %s -> %s (%s -> %s, -%.1f%%)\n",
-				filepath.Base(optRes.OriginalPath),
-				filepath.Base(optRes.FinalPath),
-				FormatHumanBytes(optRes.OriginalSize),
-				FormatHumanBytes(optRes.FinalSize),
-				optRes.SavingsPercent,
-			)
-		}
-
-		urlToRelPath[rawURL] = optRes.RelativePath
-	}
-
-	// Optimize local images if enabled
-	localToNewPath := make(map[string]string)
-	for _, lImg := range localImages {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		localRelPath := filepath.FromSlash(lImg.Path)
-		absPath := filepath.Join(noteDir, localRelPath)
-		if _, err := os.Stat(absPath); err != nil {
-			// Might be relative to vault root
-			if p.cfg.VaultPath != "" {
-				absPath = filepath.Join(p.cfg.VaultPath, localRelPath)
-			}
-		}
-
-		if _, err := os.Stat(absPath); err != nil {
-			if p.cfg.Verbose {
-				fmt.Printf("   ⚠️  Local file not found: %s\n", lImg.Path)
-			}
-			continue
-		}
-
-		p.stats.TotalImagesFound++
-		imgAttachedDir := filepath.Dir(absPath)
-
-		optRes, err := optimizer.Optimize(absPath, imgAttachedDir, noteDir, p.cfg)
-		if err != nil {
-			p.stats.TotalErrors++
-			continue
-		}
-
-		p.stats.TotalOriginalBytes += optRes.OriginalSize
-		p.stats.TotalOptimizedBytes += optRes.FinalSize
-
-		if optRes.KeptOriginal {
-			p.stats.TotalKeptOriginal++
-			if p.cfg.Verbose {
-				fmt.Printf("   ℹ️  Kept original %s (was already optimal)\n", filepath.Base(absPath))
-			}
-		} else {
-			p.stats.TotalWebpConverted++
-			fmt.Printf("   ✨ Compressed local %s -> %s (-%.1f%%)\n",
-				filepath.Base(optRes.OriginalPath),
-				filepath.Base(optRes.FinalPath),
-				optRes.SavingsPercent,
-			)
-
-			// Calculate new relative link matching the original link style
-			origDir := filepath.Dir(lImg.Path)
-			newFileName := filepath.Base(optRes.FinalPath)
-			var newRelLink string
-			if origDir == "." || origDir == "" {
-				newRelLink = newFileName
-			} else {
-				newRelLink = filepath.ToSlash(filepath.Join(origDir, newFileName))
-			}
-			localToNewPath[lImg.Path] = newRelLink
-		}
-	}
-
-	if len(urlToRelPath) == 0 && len(localToNewPath) == 0 {
-		return nil
-	}
+	notes := p.parseNotes(targets)
+	remoteJobs := p.planRemote(notes)
+	localJobs := p.planLocal(v, notes)
 
 	if p.cfg.DryRun {
-		fmt.Printf("   [DRY-RUN] Would update %d remote and %d local link(s) in %s\n",
-			len(urlToRelPath), len(localToNewPath), filepath.Base(filePath))
+		p.reportPlan(remoteJobs, localJobs)
 		return nil
 	}
 
-	newContent := content
-	if len(urlToRelPath) > 0 {
-		newContent = parser.ReplaceRemoteLinks(newContent, urlToRelPath, p.cfg.LinkFormat)
-	}
-	if len(localToNewPath) > 0 {
-		newContent = parser.ReplaceLocalLinks(newContent, localToNewPath)
-	}
+	p.executeRemote(ctx, remoteJobs)
+	p.executeLocal(ctx, localJobs)
 
-	if newContent != content {
-		// Atomic file write
-		tmpPath := filePath + ".tmp"
-		if err := os.WriteFile(tmpPath, []byte(newContent), 0644); err != nil {
-			return fmt.Errorf("failed to write updated file: %w", err)
-		}
-		if err := os.Rename(tmpPath, filePath); err != nil {
-			return fmt.Errorf("failed to replace original markdown file: %w", err)
-		}
-		p.stats.TotalFilesModified++
-		fmt.Printf("   💾 Updated %d image link(s) in %s\n",
-			len(urlToRelPath)+len(localToNewPath), filepath.Base(filePath))
-	}
+	p.collectRemoteUpdates(remoteJobs)
+	p.collectLocalUpdates(v, localJobs)
+	failedNotes := p.applyUpdates(notes, localJobs)
+	p.retireOriginals(v, localJobs, failedNotes)
 
-	return nil
+	return ctx.Err()
 }
 
-func (p *Processor) printFinalReport() {
-	fmt.Printf("\n==========================================\n")
-	fmt.Printf("🎉 Optimization Complete!\n")
-	fmt.Printf("==========================================\n")
-	fmt.Printf("📄 Files scanned:           %d\n", p.stats.TotalFilesScanned)
-	fmt.Printf("✏️  Files updated:           %d\n", p.stats.TotalFilesModified)
-	fmt.Printf("🖼️  Images processed:        %d\n", p.stats.TotalImagesFound)
-	fmt.Printf("✨ WebP compressed:         %d\n", p.stats.TotalWebpConverted)
-	fmt.Printf("📦 Originals kept (smaller): %d\n", p.stats.TotalKeptOriginal)
-	if p.stats.TotalErrors > 0 {
-		fmt.Printf("⚠️  Errors encountered:      %d\n", p.stats.TotalErrors)
+// collectScope determines the vault snapshot and the notes to process.
+func (p *Processor) collectScope() (*vault, []string, error) {
+	root := p.cfg.VaultPath
+	if root != "" {
+		info, err := os.Stat(root)
+		if err != nil {
+			return nil, nil, fmt.Errorf("vault: %w", err)
+		}
+		if !info.IsDir() {
+			return nil, nil, fmt.Errorf("vault %s is not a directory", root)
+		}
 	}
 
-	if p.stats.TotalOriginalBytes > 0 {
-		saved := p.stats.TotalOriginalBytes - p.stats.TotalOptimizedBytes
-		var pct float64
-		if p.stats.TotalOriginalBytes > 0 {
-			pct = float64(saved) / float64(p.stats.TotalOriginalBytes) * 100
+	if p.cfg.FilePath != "" {
+		info, err := os.Stat(p.cfg.FilePath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("file: %w", err)
 		}
-		fmt.Printf("📊 Original total size:     %s\n", FormatHumanBytes(p.stats.TotalOriginalBytes))
-		fmt.Printf("💾 Optimized total size:    %s\n", FormatHumanBytes(p.stats.TotalOptimizedBytes))
-		fmt.Printf("🚀 Total space saved:       %s (-%.1f%%)\n", FormatHumanBytes(saved), pct)
+		if !info.Mode().IsRegular() {
+			return nil, nil, fmt.Errorf("%s is not a regular file", p.cfg.FilePath)
+		}
+		if root != "" && !fsutil.IsWithin(root, p.cfg.FilePath) {
+			p.rep.Warn("%s is outside the vault %s; ignoring the vault", p.cfg.FilePath, root)
+			root = ""
+		}
+		v := &vault{root: root, images: make(map[string][]string)}
+		// The whole vault is only needed to resolve and safely retire local images.
+		if root != "" && p.cfg.OptimizeLocal {
+			scanned, err := scanVault(root, p.rep)
+			if err != nil {
+				return nil, nil, fmt.Errorf("vault traversal failed: %w", err)
+			}
+			v = scanned
+		}
+		return v, []string{p.cfg.FilePath}, nil
 	}
-	fmt.Printf("==========================================\n\n")
+
+	p.rep.Info("🔍 Scanning vault: %s", root)
+	v, err := scanVault(root, p.rep)
+	if err != nil {
+		return nil, nil, fmt.Errorf("vault traversal failed: %w", err)
+	}
+	p.rep.Info("📄 Found %d markdown file(s)\n", len(v.notes))
+	return v, v.notes, nil
 }
 
-func truncateURL(s string, maxLen int) string {
-	if len(s) <= maxLen {
+// parseNotes reads and parses the target notes.
+func (p *Processor) parseNotes(paths []string) []*note {
+	notes := make([]*note, 0, len(paths))
+	for _, path := range paths {
+		n, err := p.parseNote(path, true)
+		if err != nil {
+			p.rep.Warn("Cannot read %s: %v", path, err)
+			p.stats.Errors++
+			continue
+		}
+		notes = append(notes, n)
+	}
+	return notes
+}
+
+func (p *Processor) parseNote(path string, withRemote bool) (*note, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	content := string(data)
+	n := &note{path: path, dir: filepath.Dir(path)}
+	if withRemote {
+		n.remoteRefs = parser.ExtractRemoteImages(content)
+	}
+	if p.cfg.OptimizeLocal {
+		n.localRefs = parser.ExtractLocalImages(content)
+	}
+	return n, nil
+}
+
+// runParallel calls fn for each index in [0, n) using at most limit
+// goroutines. It stops starting new work once ctx is cancelled.
+func runParallel(ctx context.Context, n, limit int, fn func(i int)) {
+	sem := make(chan struct{}, limit)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		select {
+		case <-ctx.Done():
+			wg.Wait()
+			return
+		case sem <- struct{}{}:
+		}
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			fn(i)
+		}(i)
+	}
+	wg.Wait()
+}
+
+// applyUpdates rewrites every note that has planned link changes. Each note
+// is re-read right before writing, so edits made while images were being
+// downloaded are preserved. It returns the notes whose update failed.
+func (p *Processor) applyUpdates(targets []*note, localJobs []*localJob) map[string]bool {
+	byPath := make(map[string]*note)
+	for _, n := range targets {
+		byPath[n.path] = n
+	}
+	for _, job := range localJobs {
+		for _, ref := range job.refs {
+			byPath[ref.note.path] = ref.note
+		}
+	}
+
+	paths := make([]string, 0, len(byPath))
+	for path, n := range byPath {
+		if n.hasUpdates() {
+			paths = append(paths, path)
+		}
+	}
+	sort.Strings(paths)
+
+	failed := make(map[string]bool)
+	for _, path := range paths {
+		n := byPath[path]
+		changed, err := p.applyLinkUpdates(n)
+		if err != nil {
+			p.rep.Warn("Failed to update links in %s: %v", path, err)
+			p.stats.Errors++
+			failed[path] = true
+			continue
+		}
+		if changed {
+			p.stats.FilesModified++
+			p.rep.Info("   💾 Updated %d image link(s) in %s",
+				len(n.remoteUpdates)+len(n.localUpdates), filepath.Base(path))
+		}
+	}
+	return failed
+}
+
+func (p *Processor) applyLinkUpdates(n *note) (bool, error) {
+	info, err := os.Stat(n.path)
+	if err != nil {
+		return false, err
+	}
+	fresh, err := os.ReadFile(n.path) // the note may have been edited meanwhile
+	if err != nil {
+		return false, err
+	}
+
+	content := string(fresh)
+	updated := parser.ReplaceRemoteLinks(content, n.remoteUpdates, p.cfg.LinkFormat)
+	updated = parser.ReplaceLocalLinks(updated, n.localUpdates)
+	if updated == content {
+		return false, nil
+	}
+	return true, fsutil.WriteFileAtomic(n.path, []byte(updated), info.Mode().Perm())
+}
+
+func (p *Processor) reportPlan(remoteJobs []*remoteJob, localJobs []*localJob) {
+	for _, job := range remoteJobs {
+		p.rep.Info("   [DRY-RUN] Would download %s -> %s", truncate(job.url, 80), job.dir)
+	}
+	for _, job := range localJobs {
+		p.rep.Info("   [DRY-RUN] Would optimize %s (%d reference(s))", job.path, len(job.refs))
+	}
+	p.stats.PlannedDownloads = len(remoteJobs)
+	p.stats.PlannedLocal = len(localJobs)
+}
+
+func (p *Processor) recordResult(res *optimizer.Result) {
+	p.stats.OriginalBytes += res.OriginalSize
+	p.stats.OptimizedBytes += res.FinalSize
+	if res.Improved() {
+		p.stats.ImagesCompressed++
+	} else {
+		p.stats.OriginalsKept++
+	}
+}
+
+func (p *Processor) describeKept(name string, res *optimizer.Result) {
+	if res.EncodeErr != nil {
+		p.rep.Warn("Kept original %s: %s: %v", name, res.KeptReason, res.EncodeErr)
+		return
+	}
+	p.rep.Info("   ℹ️  Kept original %s (%s, %s)", name, report.FormatHumanBytes(res.OriginalSize), res.KeptReason)
+}
+
+// stemAndExt splits a file name into stem and lower-cased extension.
+func stemAndExt(path string) (string, string) {
+	base := filepath.Base(path)
+	ext := filepath.Ext(base)
+	return strings.TrimSuffix(base, ext), strings.ToLower(ext)
+}
+
+// moveToBackup moves src into backupDir under a free name.
+func moveToBackup(src, backupDir string) (string, error) {
+	if err := os.MkdirAll(backupDir, dirPerm); err != nil {
+		return "", err
+	}
+	stem, ext := stemAndExt(src)
+	return fsutil.CommitUnique(src, backupDir, stem, ext)
+}
+
+func truncate(s string, maxLen int) string {
+	r := []rune(s)
+	if len(r) <= maxLen {
 		return s
 	}
-	return s[:maxLen-3] + "..."
+	return string(r[:maxLen-3]) + "..."
+}
+
+// kindOf sniffs the real format of a local file.
+func kindOf(path string) imagekind.Kind {
+	kind, err := imagekind.SniffFile(path)
+	if err != nil {
+		return imagekind.Unknown
+	}
+	return kind
 }

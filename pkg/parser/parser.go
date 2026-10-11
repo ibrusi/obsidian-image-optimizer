@@ -1,325 +1,275 @@
+// Package parser finds image embeds in Obsidian markdown and rewrites their
+// targets. It is a pure package: it never touches the filesystem.
+//
+// Rewriting works on byte offsets: every replacement edits only the exact span
+// of the link target, so alt texts, titles and HTML attributes are preserved
+// verbatim, and content inside code blocks and comments is never modified.
 package parser
 
 import (
-	"fmt"
+	"html"
+	"net/url"
+	"path"
 	"regexp"
+	"sort"
 	"strings"
+
+	"obsidian-image-optimizer/pkg/config"
+	"obsidian-image-optimizer/pkg/imagekind"
 )
 
-var (
-	// Markdown standard image: ![alt](https://... "optional title") or ![alt](<https://...> "title")
-	// Group 1: alt text
-	// Group 2: URL with possible angle brackets
-	// Group 3: optional title with quotes
-	mdImageRe = regexp.MustCompile(`!\[([^\]]*)\]\((<?https?://[^\s\)>]+>?)(?:\s+("[^"]*"|'[^']*'))?\)`)
+// LinkKind is the syntax of an image embed.
+type LinkKind int
 
-	// HTML img tag: <img ... src="https://..." ...>
-	htmlImgRe = regexp.MustCompile(`(?i)<img\b([^>]*?)\bsrc=["'](https?://[^"']+)["']([^>]*?)>`)
-
-	// Obsidian wikilink remote image: ![[https://...]]
-	wikiRemoteRe = regexp.MustCompile(`!\[\[(https?://[^\|\]]+)(?:\|([^\]]+))?\]\]`)
+const (
+	// Markdown is ![alt](target "title").
+	Markdown LinkKind = iota
+	// HTML is <img src="target">.
+	HTML
+	// Wiki is ![[target|alt]].
+	Wiki
 )
 
-// RemoteImage represents an identified remote image link in markdown.
-type RemoteImage struct {
-	OriginalMatch string
-	URL           string
-	Alt           string
-	Title         string
-	IsHTML        bool
-	IsWiki        bool
-}
+// ImageRef is a single image embed found in a document.
+type ImageRef struct {
+	Kind LinkKind
 
-// ExtractRemoteImages finds all remote image links (HTTP/HTTPS) in markdown content.
-func ExtractRemoteImages(content string) []RemoteImage {
-	var images []RemoteImage
-	seenURLs := make(map[string]bool)
+	// Start and End delimit the whole embed in the document.
+	Start, End int
 
-	// 1. Find standard markdown images
-	matches := mdImageRe.FindAllStringSubmatchIndex(content, -1)
-	for _, m := range matches {
-		matchStr := content[m[0]:m[1]]
-		alt := content[m[2]:m[3]]
-		rawURL := content[m[4]:m[5]]
-		rawURL = strings.Trim(rawURL, "<>") // Strip angle brackets if present
+	// TargetStart and TargetEnd delimit the target as written in the
+	// document (for Markdown including the optional angle brackets).
+	TargetStart, TargetEnd int
 
-		var title string
-		if m[6] != -1 && m[7] != -1 {
-			title = content[m[6]:m[7]]
-		}
+	// Target is the link target: angle brackets stripped for Markdown, HTML
+	// entities decoded for <img>, surrounding spaces trimmed for wikilinks.
+	// Percent-encoding is preserved; see DecodedPath.
+	Target string
 
-		images = append(images, RemoteImage{
-			OriginalMatch: matchStr,
-			URL:           rawURL,
-			Alt:           alt,
-			Title:         title,
-			IsHTML:        false,
-			IsWiki:        false,
-		})
-		seenURLs[rawURL] = true
-	}
-
-	// 2. Find HTML <img> tags
-	htmlMatches := htmlImgRe.FindAllStringSubmatchIndex(content, -1)
-	for _, m := range htmlMatches {
-		matchStr := content[m[0]:m[1]]
-		rawURL := content[m[4]:m[5]]
-
-		images = append(images, RemoteImage{
-			OriginalMatch: matchStr,
-			URL:           rawURL,
-			IsHTML:        true,
-			IsWiki:        false,
-		})
-		seenURLs[rawURL] = true
-	}
-
-	// 3. Find Obsidian wikilinks with remote URLs: ![[https://...]]
-	wikiMatches := wikiRemoteRe.FindAllStringSubmatchIndex(content, -1)
-	for _, m := range wikiMatches {
-		matchStr := content[m[0]:m[1]]
-		rawURL := content[m[2]:m[3]]
-		var alt string
-		if m[4] != -1 && m[5] != -1 {
-			alt = content[m[4]:m[5]]
-		}
-
-		images = append(images, RemoteImage{
-			OriginalMatch: matchStr,
-			URL:           rawURL,
-			Alt:           alt,
-			IsHTML:        false,
-			IsWiki:        true,
-		})
-		seenURLs[rawURL] = true
-	}
-
-	return images
-}
-
-// ReplaceRemoteLinks replaces all occurrences of remote URLs with local relative paths.
-func ReplaceRemoteLinks(content string, urlToRelPath map[string]string, linkFormat string) string {
-	// Replace standard Markdown images
-	content = mdImageRe.ReplaceAllStringFunc(content, func(match string) string {
-		sub := mdImageRe.FindStringSubmatch(match)
-		if len(sub) < 3 {
-			return match
-		}
-		alt := sub[1]
-		rawURL := strings.Trim(sub[2], "<>")
-		title := ""
-		if len(sub) > 3 && sub[3] != "" {
-			title = " " + sub[3]
-		}
-
-		localPath, ok := urlToRelPath[rawURL]
-		if !ok {
-			return match
-		}
-
-		if linkFormat == "wikilink" {
-			if alt != "" {
-				return fmt.Sprintf("![[%s|%s]]", localPath, alt)
-			}
-			return fmt.Sprintf("![[%s]]", localPath)
-		}
-
-		return fmt.Sprintf("![%s](%s%s)", alt, localPath, title)
-	})
-
-	// Replace HTML <img> tags
-	content = htmlImgRe.ReplaceAllStringFunc(content, func(match string) string {
-		sub := htmlImgRe.FindStringSubmatch(match)
-		if len(sub) < 4 {
-			return match
-		}
-		prefix := strings.TrimSpace(sub[1])
-		rawURL := sub[2]
-		suffix := strings.TrimSpace(sub[3])
-
-		localPath, ok := urlToRelPath[rawURL]
-		if !ok {
-			return match
-		}
-
-		var sb strings.Builder
-		sb.WriteString("<img")
-		if prefix != "" {
-			sb.WriteString(" ")
-			sb.WriteString(prefix)
-		}
-		sb.WriteString(fmt.Sprintf(" src=\"%s\"", localPath))
-		if suffix != "" {
-			sb.WriteString(" ")
-			sb.WriteString(suffix)
-		}
-		sb.WriteString(">")
-		return sb.String()
-	})
-
-	// Replace Wiki remote links
-	content = wikiRemoteRe.ReplaceAllStringFunc(content, func(match string) string {
-		sub := wikiRemoteRe.FindStringSubmatch(match)
-		if len(sub) < 2 {
-			return match
-		}
-		rawURL := sub[1]
-		alt := ""
-		if len(sub) > 2 && sub[2] != "" {
-			alt = "|" + sub[2]
-		}
-
-		localPath, ok := urlToRelPath[rawURL]
-		if !ok {
-			return match
-		}
-
-		return fmt.Sprintf("![[%s%s]]", localPath, alt)
-	})
-
-	return content
+	// Alt is the alt text (Markdown, wikilink) if present.
+	Alt string
 }
 
 var (
-	mdLocalImageRe   = regexp.MustCompile(`!\[([^\]]*)\]\((<?([^:\s\)>]+?\.(?i:jpe?g|png|gif|bmp|tiff))>?)(?:\s+("[^"]*"|'[^']*'))?\)`)
-	htmlLocalImgRe   = regexp.MustCompile(`(?i)<img\b([^>]*?)\bsrc=["']([^:\s"']+?\.(?i:jpe?g|png|gif|bmp|tiff))["']([^>]*?)>`)
-	wikiLocalImageRe = regexp.MustCompile(`!\[\[([^:\|\]]+?\.(?i:jpe?g|png|gif|bmp|tiff))(?:\|([^\]]+))?\]\]`)
+	// ![alt](dest "title"): dest may contain one level of balanced
+	// parentheses, e.g. Wikipedia's "File:Foo_(bar).png", or be <bracketed>.
+	mdImageRe = regexp.MustCompile(`!\[([^\]\n]*)\]\(\s*(<[^<>\n]*>|(?:[^\s()<>]|\([^\s()<>]*\))+)(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^()\n]*\)))?\s*\)`)
+
+	// <img ... src="..."> where src is preceded by whitespace, so that
+	// data-src and similar attributes are not mistaken for src.
+	htmlImgRe = regexp.MustCompile(`(?i)<img\b[^>]*?\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)')[^>]*>`)
+
+	// ![[target|alt]]
+	wikiImageRe = regexp.MustCompile(`!\[\[([^\[\]|\n]+)(?:\|([^\[\]\n]*))?\]\]`)
+
+	// A URI scheme such as https:, data: or obsidian: (two+ letters, so a
+	// Windows drive letter is not mistaken for a scheme).
+	schemeRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.\-]+:`)
 )
 
-// LocalImage represents an existing local image in markdown.
-type LocalImage struct {
-	OriginalMatch string
-	Path          string
-	Alt           string
-	Title         string
-	IsHTML        bool
-	IsWiki        bool
+// ExtractImages returns every image embed outside code blocks, inline code
+// and comments, ordered by position.
+func ExtractImages(content string) []ImageRef {
+	code := codeRanges(content)
+	var refs []ImageRef
+
+	for _, m := range mdImageRe.FindAllStringSubmatchIndex(content, -1) {
+		target := strings.TrimSuffix(strings.TrimPrefix(content[m[4]:m[5]], "<"), ">")
+		refs = append(refs, ImageRef{
+			Kind: Markdown, Start: m[0], End: m[1],
+			TargetStart: m[4], TargetEnd: m[5],
+			Target: target, Alt: content[m[2]:m[3]],
+		})
+	}
+
+	for _, m := range htmlImgRe.FindAllStringSubmatchIndex(content, -1) {
+		vs, ve := m[2], m[3]
+		if vs < 0 {
+			vs, ve = m[4], m[5]
+		}
+		refs = append(refs, ImageRef{
+			Kind: HTML, Start: m[0], End: m[1],
+			TargetStart: vs, TargetEnd: ve,
+			Target: html.UnescapeString(content[vs:ve]),
+		})
+	}
+
+	for _, m := range wikiImageRe.FindAllStringSubmatchIndex(content, -1) {
+		ref := ImageRef{
+			Kind: Wiki, Start: m[0], End: m[1],
+			TargetStart: m[2], TargetEnd: m[3],
+			Target: strings.TrimSpace(content[m[2]:m[3]]),
+		}
+		if m[4] >= 0 {
+			ref.Alt = content[m[4]:m[5]]
+		}
+		refs = append(refs, ref)
+	}
+
+	sort.Slice(refs, func(i, j int) bool { return refs[i].Start < refs[j].Start })
+
+	kept := refs[:0]
+	lastEnd := -1
+	for _, r := range refs {
+		if r.Start < lastEnd || inCode(r.Start, code) || inCode(r.End-1, code) {
+			continue
+		}
+		kept = append(kept, r)
+		lastEnd = r.End
+	}
+	return kept
 }
 
-// ExtractLocalImages finds all local image paths with compressible extensions in markdown.
-func ExtractLocalImages(content string) []LocalImage {
-	var images []LocalImage
-	seen := make(map[string]bool)
-
-	// Markdown images
-	for _, m := range mdLocalImageRe.FindAllStringSubmatchIndex(content, -1) {
-		matchStr := content[m[0]:m[1]]
-		alt := content[m[2]:m[3]]
-		rawPath := strings.Trim(content[m[4]:m[5]], "<>")
-		var title string
-		if m[6] != -1 && m[7] != -1 {
-			title = content[m[6]:m[7]]
-		}
-		if !seen[rawPath] {
-			seen[rawPath] = true
-			images = append(images, LocalImage{
-				OriginalMatch: matchStr,
-				Path:          rawPath,
-				Alt:           alt,
-				Title:         title,
-			})
-		}
-	}
-
-	// HTML images
-	for _, m := range htmlLocalImgRe.FindAllStringSubmatchIndex(content, -1) {
-		matchStr := content[m[0]:m[1]]
-		rawPath := content[m[4]:m[5]]
-		if !seen[rawPath] {
-			seen[rawPath] = true
-			images = append(images, LocalImage{
-				OriginalMatch: matchStr,
-				Path:          rawPath,
-				IsHTML:        true,
-			})
-		}
-	}
-
-	// Wiki images
-	for _, m := range wikiLocalImageRe.FindAllStringSubmatchIndex(content, -1) {
-		matchStr := content[m[0]:m[1]]
-		rawPath := content[m[2]:m[3]]
-		var alt string
-		if m[4] != -1 && m[5] != -1 {
-			alt = content[m[4]:m[5]]
-		}
-		if !seen[rawPath] {
-			seen[rawPath] = true
-			images = append(images, LocalImage{
-				OriginalMatch: matchStr,
-				Path:          rawPath,
-				Alt:           alt,
-				IsWiki:        true,
-			})
-		}
-	}
-
-	return images
+// ExtractRemoteImages returns every embed whose target is an http(s) URL.
+func ExtractRemoteImages(content string) []ImageRef {
+	return filterRefs(ExtractImages(content), func(r ImageRef) bool { return IsRemote(r.Target) })
 }
 
-// ReplaceLocalLinks updates local image paths in markdown to their new paths (e.g. .webp).
-func ReplaceLocalLinks(content string, pathToNewPath map[string]string) string {
-	content = mdLocalImageRe.ReplaceAllStringFunc(content, func(match string) string {
-		sub := mdLocalImageRe.FindStringSubmatch(match)
-		if len(sub) < 4 {
-			return match
-		}
-		alt := sub[1]
-		rawPath := strings.Trim(sub[2], "<>")
-		title := ""
-		if len(sub) > 4 && sub[4] != "" {
-			title = " " + sub[4]
-		}
-		newPath, ok := pathToNewPath[rawPath]
-		if !ok {
-			return match
-		}
-		return fmt.Sprintf("![%s](%s%s)", alt, newPath, title)
+// ExtractLocalImages returns every embed of a local raster image that can be
+// optimised (JPEG, PNG, GIF, BMP, TIFF).
+func ExtractLocalImages(content string) []ImageRef {
+	return filterRefs(ExtractImages(content), func(r ImageRef) bool {
+		return IsLocal(r.Target) && imagekind.IsCompressibleExt(r.DecodedPath())
 	})
+}
 
-	content = htmlLocalImgRe.ReplaceAllStringFunc(content, func(match string) string {
-		sub := htmlLocalImgRe.FindStringSubmatch(match)
-		if len(sub) < 4 {
-			return match
-		}
-		prefix := strings.TrimSpace(sub[1])
-		rawPath := sub[2]
-		suffix := strings.TrimSpace(sub[3])
-		newPath, ok := pathToNewPath[rawPath]
+// IsRemote reports whether target is an http or https URL.
+func IsRemote(target string) bool {
+	lower := strings.ToLower(target)
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
+}
+
+// IsLocal reports whether target is a path inside the vault rather than a URL
+// of any scheme (http:, data:, file:, obsidian:, ...).
+func IsLocal(target string) bool {
+	return target != "" && !strings.HasPrefix(target, "#") && !schemeRe.MatchString(target)
+}
+
+// DecodedPath returns the target as a slash-separated file path: wikilinks
+// are used verbatim, other targets are percent-decoded when possible.
+func (r ImageRef) DecodedPath() string {
+	if r.Kind == Wiki {
+		return r.Target
+	}
+	if decoded, err := url.PathUnescape(r.Target); err == nil {
+		return decoded
+	}
+	return r.Target
+}
+
+// ReplaceRemoteLinks rewrites remote image targets found in urlToPath to the
+// given local slash-separated paths. With LinkFormatWikilink, Markdown embeds
+// are converted to wikilinks; HTML and wikilink embeds keep their syntax.
+func ReplaceRemoteLinks(content string, urlToPath map[string]string, format config.LinkFormat) string {
+	var edits []edit
+	for _, ref := range ExtractRemoteImages(content) {
+		newPath, ok := urlToPath[ref.Target]
 		if !ok {
-			return match
+			continue
 		}
-		var sb strings.Builder
-		sb.WriteString("<img")
-		if prefix != "" {
-			sb.WriteString(" ")
-			sb.WriteString(prefix)
+		if format == config.LinkFormatWikilink && ref.Kind == Markdown {
+			edits = append(edits, ref.asWikilink(newPath))
+		} else {
+			edits = append(edits, ref.retarget(newPath))
 		}
-		sb.WriteString(fmt.Sprintf(" src=\"%s\"", newPath))
-		if suffix != "" {
-			sb.WriteString(" ")
-			sb.WriteString(suffix)
-		}
-		sb.WriteString(">")
-		return sb.String()
-	})
+	}
+	return applyEdits(content, edits)
+}
 
-	content = wikiLocalImageRe.ReplaceAllStringFunc(content, func(match string) string {
-		sub := wikiLocalImageRe.FindStringSubmatch(match)
-		if len(sub) < 2 {
-			return match
+// ReplaceLocalLinks rewrites local image targets: keys are targets as
+// returned in ImageRef.Target, values are the new targets in the same style.
+func ReplaceLocalLinks(content string, targetToNew map[string]string) string {
+	var edits []edit
+	for _, ref := range ExtractLocalImages(content) {
+		if newTarget, ok := targetToNew[ref.Target]; ok {
+			edits = append(edits, ref.retarget(newTarget))
 		}
-		rawPath := sub[1]
-		alt := ""
-		if len(sub) > 2 && sub[2] != "" {
-			alt = "|" + sub[2]
-		}
-		newPath, ok := pathToNewPath[rawPath]
-		if !ok {
-			return match
-		}
-		return fmt.Sprintf("![[%s%s]]", newPath, alt)
-	})
+	}
+	return applyEdits(content, edits)
+}
 
-	return content
+// ReplaceLastSegment returns target with its file name replaced by newName,
+// preserving the folder part and the percent-encoding style of the original.
+func ReplaceLastSegment(target, newName string) string {
+	if strings.Contains(target, "%") {
+		newName = url.PathEscape(newName)
+	}
+	dir, _ := path.Split(target)
+	return dir + newName
+}
+
+// retarget replaces only the target span, keeping the rest of the embed intact.
+func (r ImageRef) retarget(newTarget string) edit {
+	var text string
+	switch r.Kind {
+	case Markdown:
+		text = formatMarkdownDest(newTarget)
+	case HTML:
+		text = html.EscapeString(newTarget)
+	default:
+		text = newTarget
+	}
+	return edit{start: r.TargetStart, end: r.TargetEnd, text: text}
+}
+
+// asWikilink replaces the whole Markdown embed with an equivalent wikilink.
+func (r ImageRef) asWikilink(newTarget string) edit {
+	var sb strings.Builder
+	sb.WriteString("![[")
+	sb.WriteString(newTarget)
+	if alt := wikiAltReplacer.Replace(strings.TrimSpace(r.Alt)); alt != "" {
+		sb.WriteString("|")
+		sb.WriteString(alt)
+	}
+	sb.WriteString("]]")
+	return edit{start: r.Start, end: r.End, text: sb.String()}
+}
+
+var wikiAltReplacer = strings.NewReplacer("|", " ", "[", "(", "]", ")", "\n", " ")
+
+// formatMarkdownDest wraps destinations containing spaces or parentheses in
+// angle brackets, which CommonMark and Obsidian accept verbatim.
+func formatMarkdownDest(dest string) string {
+	if strings.ContainsAny(dest, " \t()") {
+		return "<" + dest + ">"
+	}
+	return dest
+}
+
+func filterRefs(refs []ImageRef, keep func(ImageRef) bool) []ImageRef {
+	out := refs[:0]
+	for _, r := range refs {
+		if keep(r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// edit replaces content[start:end] with text.
+type edit struct {
+	start, end int
+	text       string
+}
+
+// applyEdits applies non-overlapping edits in a single pass.
+func applyEdits(content string, edits []edit) string {
+	if len(edits) == 0 {
+		return content
+	}
+	sort.Slice(edits, func(i, j int) bool { return edits[i].start < edits[j].start })
+
+	var sb strings.Builder
+	sb.Grow(len(content))
+	pos := 0
+	for _, e := range edits {
+		if e.start < pos {
+			continue // overlapping edits cannot happen with ExtractImages; be defensive
+		}
+		sb.WriteString(content[pos:e.start])
+		sb.WriteString(e.text)
+		pos = e.end
+	}
+	sb.WriteString(content[pos:])
+	return sb.String()
 }

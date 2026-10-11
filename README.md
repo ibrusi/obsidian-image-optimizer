@@ -2,43 +2,40 @@
 
 [English](README.md) | [Русский](README.ru.md)
 
-A high-performance Go CLI utility and [Obsidian](https://obsidian.md) plugin that automates the entire image processing workflow in your notes:
+A Go CLI utility and [Obsidian](https://obsidian.md) plugin that automates the image workflow in your notes:
 
-1. **Download remote images**: Fetches web images from URLs (`http(s)://`) and saves them locally into the `attachments/` folder relative to each note.
-2. **Originals backup**: Automatically preserves original images in a `.originals_backup/` subfolder.
-3. **WebP conversion**: Converts images to WebP with configurable compression quality (**default 40%** — balanced for minimal file size while preserving sharp text and details).
-4. **Smart GIF compression**: Supports Animated WebP (`gif2webp`, `ffmpeg`), lossy LZW compression via `gifsicle --lossy=80`, and a built-in Go palette optimizer.
-5. **Strict size verification**: The converted image is kept **only if its file size is strictly smaller than the original**. If the size increases or remains unchanged, the converted file is removed and the original is retained.
-6. **Automatic link rewriting**: Rewrites Markdown links (`![alt](url)`, `<img src="url">`, `![[url]]`) to local attachment paths (`attachments/image.webp`).
-7. **Optional local image optimization**: Recursively optimizes already existing local images inside your vault (`--optimize-local`).
+1. **Download remote images**: fetches images linked by URL (`http(s)://`) into an `attachments/` folder next to each note. Only real images are accepted — an HTML "hotlinking denied" page never replaces your link.
+2. **WebP conversion**: converts images to WebP with configurable quality (**default 40** — minimal file size while keeping text sharp). Phone photos are rotated according to their EXIF orientation, and the colour profile (ICC) is preserved.
+3. **Smart GIF compression**: animated WebP (`gif2webp`, `ffmpeg`), lossy GIF via `gifsicle`, and a built-in Go palette optimizer as a last resort.
+4. **Strict size verification**: a converted image is used **only if it is strictly smaller than the original**; otherwise the original is kept.
+5. **Safe link rewriting**: rewrites `![alt](url)`, `<img src="url">` and `![[url]]` to local paths. Links inside code blocks, inline code and comments are never touched, and edits you make in the note while images are downloading are preserved.
+6. **Never overwrites your files**: new files always get a free name (`pic.webp`, `pic-1.webp`, …); existing files are never overwritten or deleted by mistake.
+7. **Optional local image optimization** (`--optimize-local`): optimizes images already in the vault and updates **every** note that embeds them.
 
 ---
 
 ## 💡 GIF Optimization Strategy
 
-> **Key Fact**: GIFs **can** be converted to WebP!  
-> WebP natively supports frame-by-frame animation (**Animated WebP**), and Chromium/Electron (on which Obsidian is built) supports Animated WebP out of the box!
+> **Key fact**: GIFs **can** be converted to WebP!
+> WebP supports frame-by-frame animation (**Animated WebP**), and Chromium/Electron (on which Obsidian is built) displays it natively.
 
-### GIF Handling Options:
+| Mode (`--gif-mode`) | What happens |
+| :--- | :--- |
+| `auto` (default) | Converts to animated WebP (`gif2webp`, then `ffmpeg`). If that is unavailable or not smaller, optimizes the GIF as GIF (`gifsicle`, `ffmpeg` palette, built-in Go optimizer). |
+| `webp` | Animated WebP only; if it is not possible or not smaller, the original GIF is kept. |
+| `optimize` | Keeps the `.gif` format: `gifsicle -O3 --lossy=80`, `ffmpeg` palette generation, or the built-in Go optimizer. |
+| `keep` | Leaves every GIF (static and animated) untouched. |
 
-| Option | How It Works | Size Reduction | Pros & Cons |
-| :--- | :--- | :--- | :--- |
-| **1. Animated WebP (Recommended)** | Frame conversion via `gif2webp` or `ffmpeg` (`--gif-mode=webp` or `auto`) | **60% – 85%** | 🔥 Maximum compression, 24-bit color (GIF is limited to 256 colors), native rendering in Obsidian. |
-| **2. Lossy GIF (`gifsicle`)** | LZW color table optimization: `gifsicle -O3 --lossy=80` (`--gif-mode=optimize`) | **30% – 55%** | Preserves `.gif` extension, compatible with legacy markdown readers, but larger file size than WebP. |
-| **3. ffmpeg PaletteGen + 15fps** | 256-color palette recalculation and FPS throttling (`scale=480:-1`) | **40% – 60%** | Clean downscaling without compression artifacts. |
-| **4. Convert to MP4 / WebM** | Video format h.264/AV1 (`![[animation.mp4]]`) | **90% – 95%** | Ideal for heavy screen recordings > 10 MB. Obsidian plays video directly in the note body. |
+Typical savings: animated WebP **60–85%**, lossy GIF **30–55%**. Additional knobs: `--gif-colors` (palette size), `--gif-lossy`, `--gif-max-width` (downscale wide GIFs; supported by `gifsicle`/`ffmpeg`), `--gif-drop-frames` (built-in optimizer only).
 
-By default, the optimizer runs in **`auto`** mode:
-- If `gif2webp` or `ffmpeg` is available on your system, animated GIFs are converted to lightweight **Animated WebP**.
-- If no external tools are found or `--gif-mode=optimize` is set, `gifsicle -O3 --lossy=80` or the built-in Go palette optimizer is used.
-- In all cases, strict size verification applies: if the resulting file is not smaller than the original, the original GIF is preserved.
+In all cases the strict size check applies: if the result is not smaller, the original GIF is kept.
 
 ---
 
 ## 🚀 Installation & Build
 
-### 1. System Dependencies (Recommended)
-The utility can run self-contained using pure Go, but for optimal performance and extended GIF/WebP conversion features, installing external CLI tools is recommended:
+### 1. System dependencies (required for WebP)
+JPEG/PNG/TIFF/BMP → WebP conversion requires `cwebp` (package `webp`) or `ffmpeg`. Without them only GIFs can be optimized (with the built-in Go optimizer), and the tool prints a warning at startup.
 
 ```bash
 # Ubuntu / Debian
@@ -49,18 +46,19 @@ sudo apt install -y webp gifsicle ffmpeg
 brew install webp gifsicle ffmpeg
 
 # Windows (Scoop / Chocolatey)
-scoop install webp gifsicle ffmpeg
+scoop install libwebp gifsicle ffmpeg
 # or
 choco install webp gifsicle ffmpeg
 ```
 
-### 2. Build Go Binary
+### 2. Build the Go binary (Go 1.23+)
 ```bash
-cd obsidian-image-optimizer
-go build -o bin/obsidian-img-opt cmd/obsidian-img-opt/main.go
+git clone https://github.com/ibrusi/obsidian-local-image-small.git
+cd obsidian-local-image-small
+go build -o bin/obsidian-img-opt ./cmd/obsidian-img-opt
 ```
 
-*(Optional)* Copy binary to `/usr/local/bin` for system-wide access:
+*(Optional)* Copy the binary to `/usr/local/bin` for system-wide access:
 ```bash
 sudo cp bin/obsidian-img-opt /usr/local/bin/
 ```
@@ -71,71 +69,123 @@ sudo cp bin/obsidian-img-opt /usr/local/bin/
 
 ### Process a single note:
 ```bash
-obsidian-img-opt --file "/path/to/vault/My Article.md"
+obsidian-img-opt --vault "/path/to/vault" --file "/path/to/vault/My Article.md"
 ```
+Passing `--vault` together with `--file` is recommended: it bounds which files may be touched and is required to replace local originals safely (see below). `--file` alone also works; local originals are then never replaced.
 
-### Process an entire Obsidian vault recursively:
+### Process an entire vault recursively:
 ```bash
 obsidian-img-opt --vault "/path/to/vault"
 ```
 
-### Adjust WebP quality (default is 40%):
+### Adjust WebP quality (default is 40):
 ```bash
-obsidian-img-opt --file "note.md" --quality 40
+obsidian-img-opt --vault "/path/to/vault" --quality 60
 ```
 
 ### Optimize both local and remote images:
 ```bash
-obsidian-img-opt --file "note.md" --optimize-local
+obsidian-img-opt --vault "/path/to/vault" --optimize-local
 ```
 
-### Dry-run simulation (no files written):
+### Dry run (nothing is downloaded or written):
 ```bash
-obsidian-img-opt --vault "/path/to/vault" --dry-run
+obsidian-img-opt --vault "/path/to/vault" --optimize-local --dry-run
 ```
 
-### Available CLI Flags:
+### Machine-readable output:
+```bash
+obsidian-img-opt --vault "/path/to/vault" --output json
+```
 
-| Flag | Default Value | Description |
+### Available CLI flags
+
+| Flag | Default | Description |
 | :--- | :--- | :--- |
-| `--file` | `""` | Path to a specific Markdown file. |
-| `--vault` | `""` (or current directory) | Path to Obsidian vault for recursive processing. |
-| `--quality` | `40` | WebP compression quality (1–100). Default is 40%. |
-| `--attached-dir`| `attachments` | Name of folder for attachments relative to note. |
-| `--backup-dir` | `.originals_backup` | Subfolder for storing original image backups. |
-| `--gif-mode` | `auto` | GIF handling modes: `auto`, `webp`, `optimize`, `keep`. |
-| `--gif-lossy` | `80` | Compression level for gifsicle (typically 80–90). |
-| `--optimize-local` | `false` | Also convert existing local JPG/PNG/GIF images. |
-| `--link-format`| `markdown` | Link syntax: `markdown` (`![](...)`) or `wikilink` (`![[...]]`). |
-| `--keep-backup`| `true` | Whether to store originals in `.originals_backup/`. |
-| `--dry-run` | `false` | Simulation mode (does not modify disk). |
+| `--vault` (alias `--dir`) | current directory | Obsidian vault: processed recursively, or used as the root for `--file`. |
+| `--file` | `""` | A single Markdown file to process. |
+| `--quality` | `40` | WebP lossy quality (1–100). |
+| `--attached-dir` (alias `--attachments`) | `attachments` | Folder for downloaded images, relative to the note. Must stay inside the note folder. |
+| `--backup-dir` (alias `--backup`) | `.originals_backup` | Folder (inside the image folder) where replaced originals are moved. |
+| `--keep-backup` | `true` | Move replaced originals into `--backup-dir`; `--keep-backup=false` deletes them instead. |
+| `--optimize-local` | `false` | Also optimize existing local JPG/PNG/GIF/BMP/TIFF images. |
+| `--link-format` | `markdown` | Syntax of rewritten remote links: `markdown` (`![](...)`) or `wikilink` (`![[...]]`). |
+| `--gif-mode` | `auto` | GIF handling: `auto`, `webp`, `optimize`, `keep`. |
+| `--gif-lossy` | `80` | gifsicle lossy level (0–200). |
+| `--gif-colors` | `128` | Maximum palette size when a GIF stays a GIF (2–256). |
+| `--gif-max-width` | `0` | Downscale GIFs wider than this many pixels (`0` keeps the size). |
+| `--gif-drop-frames` | `false` | Drop every 2nd frame of long animations (built-in Go optimizer). |
+| `--dry-run` | `false` | Show planned changes without downloading or writing anything. |
+| `--output` | `text` | `text` or `json` (a single JSON summary on stdout, progress on stderr). |
+| `--verbose` | `false` | Detailed logs. |
+| `--timeout` | `30` | HTTP timeout per download, seconds. |
+| `--tool-timeout` | `300` | Timeout for a single external encoder run, seconds. |
+| `--max-download-mb` | `50` | Maximum size of a downloaded image, MB. |
+| `--max-pixels` | `100000000` | Maximum decoded size (width × height × frames) for in-process decoding. |
+| `--allow-private-hosts` | `false` | Allow downloads from localhost, private and link-local networks. |
+| `--concurrency` | `4` | Number of images processed in parallel (1–64). |
+
+The tool is configured via CLI flags only; it reads no environment variables except the standard `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`.
+
+### Exit codes
+
+| Code | Meaning |
+| :--- | :--- |
+| `0` | Success. |
+| `1` | Fatal error (invalid flags, vault not found, …). |
+| `2` | Finished, but some images or notes failed (see warnings). |
+| `130` | Interrupted (Ctrl+C / SIGTERM). |
+
+---
+
+## 🛡️ Safety Guarantees
+
+- **No clobbering.** Results are written to temp files and published under a free name; your existing files are never overwritten.
+- **Local originals are replaced last.** With `--optimize-local`, the optimized copy is created first, then every note embedding the image is rewritten, and only then is the original moved to `--backup-dir`. The original is kept if any note failed to update, if `--vault` is unknown, or if its file name is **still mentioned anywhere** in the vault (properties, canvases, plain `[[links]]`, text).
+- **Stays inside the vault.** Links pointing outside the vault and symlinks are ignored; `--attached-dir`/`--backup-dir` cannot escape the note folder.
+- **Untrusted downloads.** Only responses that are actually images are saved; sizes are capped (`--max-download-mb`); GIFs are checked before decoding (`--max-pixels`); external tools have a timeout.
+- **SSRF protection.** By default downloads from `localhost`, private (`10.x`, `192.168.x`, …), link-local (including cloud metadata `169.254.169.254`) and CGNAT addresses are refused, so a note from an untrusted source cannot probe your network. Use `--allow-private-hosts` for intranet images. When an HTTP proxy is configured, the target host is checked via DNS before the request (best effort, the proxy resolves it again).
+- **Concurrent editing.** Each note is re-read right before it is written, so edits made during downloads are kept. The remaining window is milliseconds, not zero — avoid editing the very same note during a batch run.
+
+Known limitations: indented (4-space) code blocks are not detected as code (in Obsidian this indentation is usually a nested list item); local images whose optimized version is not smaller are re-checked on every run.
 
 ---
 
 ## 🔌 Obsidian Integration
 
-You can easily trigger optimization directly within Obsidian using two methods:
-
-### Method 1: Obsidian Plugin (`obsidian-plugin/`)
-A ready-to-use Obsidian desktop plugin is included in this repository:
+### Method 1: Obsidian plugin (`obsidian-plugin/`)
+A desktop plugin is included in this repository:
 1. Copy the `obsidian-plugin` folder into your vault's plugins directory:
    ```bash
    cp -r obsidian-plugin "/path/to/vault/.obsidian/plugins/obsidian-image-optimizer"
    ```
-2. Open Obsidian -> **Settings** -> **Community plugins** -> enable **Image Optimizer (Go)**.
-3. A ribbon icon will appear on the left bar to optimize the current note in 1 click!
-4. Commands are also registered in the Command Palette (`Ctrl+P` / `Cmd+P`):
+2. Open Obsidian → **Settings** → **Community plugins** → enable **Image Optimizer (Go)**.
+3. Set the binary path in the plugin settings if `obsidian-img-opt` is not in `PATH`.
+4. A ribbon icon optimizes the current note in one click. Commands in the Command Palette (`Ctrl+P` / `Cmd+P`):
    - `Image Optimizer: Optimize images in current note`
    - `Image Optimizer: Optimize images in entire vault`
 
-### Method 2: Shell Commands Plugin
-If you already use the popular **Shell Commands** community plugin:
+The plugin passes the vault root together with the note, reads the JSON summary (`--output json`) and prevents starting a second run while one is in progress. Plugin version 1.1.0 requires a binary built from this version.
+
+### Method 2: Shell Commands plugin
+With the **Shell Commands** community plugin:
 1. Add a new command:
    ```bash
-   obsidian-img-opt --file "{{file_path:absolute}}" --quality 40
+   obsidian-img-opt --vault "{{vault_path}}" --file "{{file_path:absolute}}"
    ```
 2. Assign a hotkey (for example, `Ctrl+Alt+I`).
-3. Pressing the hotkey will download all remote images in the active note, convert them to WebP, and replace links automatically.
+
+---
+
+## 🧪 Development
+
+```bash
+gofmt -l .                 # must print nothing
+go vet ./...
+go test -race -cover ./... # integration tests are skipped when cwebp/gif2webp are missing
+```
+
+CI (`.github/workflows/ci.yml`) additionally runs `staticcheck` and checks the plugin syntax.
 
 ---
 
@@ -143,5 +193,5 @@ If you already use the popular **Shell Commands** community plugin:
 
 > [!WARNING]
 > This utility reads and modifies Markdown notes and image attachments.
-> While automatic backups of original images are enabled by default (`.originals_backup/`), **it is strongly recommended to make a full backup of your Obsidian vault** or track it with version control (such as Git) before performing batch optimizations.
+> While replaced originals are kept in `.originals_backup/` by default, **it is strongly recommended to make a full backup of your Obsidian vault** or track it with version control (such as Git) before performing batch optimizations.
 > This software is provided "as is", without warranty of any kind, express or implied. The authors are not liable for any data loss. Use at your own risk.

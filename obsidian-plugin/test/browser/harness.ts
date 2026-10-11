@@ -1,6 +1,6 @@
 // Runs inside the browser under test: encodes a synthetic photo-like image
 // with every available encoder and decodes the result back.
-import { detectVariant, encodeWebp, encodeWithCanvas, type EncoderVariant } from '../../src/encoder.ts';
+import { detectVariant, encodeWebp, encodeWithCanvas, type EncoderVariant } from '../../src/codec/encoder.ts';
 
 export interface SmokeReport {
   userAgent: string;

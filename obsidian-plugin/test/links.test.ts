@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { findRemoteImages, replaceImages } from '../src/links.ts';
+import { findRemoteImages, replaceImages } from '../src/domain/links.ts';
 
 const urls = (text: string) => findRemoteImages(text).map((i) => i.url);
 

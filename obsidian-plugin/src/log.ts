@@ -1,6 +1,6 @@
 import { normalizePath, TFile, type Vault } from 'obsidian';
 
-export const LOG_PATH = 'webp-prototype-log.md';
+export const LOG_PATH = 'image-optimizer-log.md';
 
 // RunLog appends results to a note: mobile apps have no developer console,
 // and a note is easy to read on the device and to send back.
@@ -11,7 +11,7 @@ export class RunLog {
 
   add(line: string): void {
     this.lines.push(line);
-    console.log('[webp-prototype]', line);
+    console.log('[image-optimizer]', line);
   }
 
   async flush(title: string): Promise<void> {
@@ -23,7 +23,7 @@ export class RunLog {
     if (existing instanceof TFile) {
       await this.vault.process(existing, (text) => text + block);
     } else {
-      await this.vault.create(path, `# WebP prototype log\n${block}`);
+      await this.vault.create(path, `# Image Optimizer log\n${block}`);
     }
   }
 }

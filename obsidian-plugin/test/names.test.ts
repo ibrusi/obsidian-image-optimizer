@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { baseNameFromUrl } from '../src/names.ts';
+import { baseNameFromUrl } from '../src/domain/names.ts';
 
 test('baseNameFromUrl', () => {
   const cases: Array<[string, string]> = [

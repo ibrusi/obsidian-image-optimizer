@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { imageTypeOf, isConvertible } from '../src/sniff.ts';
+import { imageTypeOf, isConvertible } from '../src/domain/sniff.ts';
 
 const pad = (head: number[] | string) => {
   const bytes = typeof head === 'string' ? Array.from(head, (c) => c.charCodeAt(0)) : head;

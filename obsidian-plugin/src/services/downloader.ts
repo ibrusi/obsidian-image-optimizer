@@ -1,5 +1,5 @@
 import { requestUrl } from 'obsidian';
-import { imageTypeOf, type ImageType } from './sniff.ts';
+import { imageTypeOf, type ImageType } from '../domain/sniff.ts';
 
 export const MAX_DOWNLOAD_BYTES = 30 * 1024 * 1024;
 

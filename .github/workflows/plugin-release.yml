@@ -1,16 +1,16 @@
-name: WebP prototype release
+name: Plugin release
 
-# Publishes the mobile WebP prototype as a pre-release, installable with BRAT
-# or by unpacking the zip into <vault>/.obsidian/plugins/. A release is made
-# once per manifest version: bump the version in manifest.json to publish.
+# Publishes the Obsidian plugin once per manifest version: bump the version in
+# manifest.json and package.json to publish. Versions with a suffix
+# (2.0.0-beta.1) become pre-releases, installable with BRAT.
 on:
   push:
-    branches: [feat/mobile-webp-prototype]
-    paths: [prototype/mobile-webp/**, .github/workflows/prototype-release.yml]
+    branches: [main, feat/webp-plugin]
+    paths: [obsidian-plugin/**, .github/workflows/plugin-release.yml]
   workflow_dispatch:
 
 concurrency:
-  group: webp-prototype-release
+  group: plugin-release
   cancel-in-progress: false
 
 permissions:
@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: prototype/mobile-webp
+        working-directory: obsidian-plugin
     steps:
       - uses: actions/checkout@v4
 
@@ -29,7 +29,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: prototype/mobile-webp/package-lock.json
+          cache-dependency-path: obsidian-plugin/package-lock.json
 
       - name: Read the version
         id: version
@@ -37,9 +37,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=$(node -p "require('./manifest.json').version")
+          if [ "$version" != "$(node -p "require('./package.json').version")" ]; then
+            echo "manifest.json and package.json versions differ"; exit 1
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          case "$version" in *-*) echo "prerelease=--prerelease" >> "$GITHUB_OUTPUT" ;; esac
           if gh release view "$version" >/dev/null 2>&1; then
-            echo "Release $version already exists; bump the manifest version to publish."
+            echo "Release $version already exists; bump the version to publish."
             echo "publish=false" >> "$GITHUB_OUTPUT"
           else
             echo "publish=true" >> "$GITHUB_OUTPUT"
@@ -57,19 +61,20 @@ jobs:
       - name: Package
         if: steps.version.outputs.publish == 'true'
         run: |
-          mkdir -p dist/webp-prototype
-          cp main.js manifest.json dist/webp-prototype/
-          (cd dist && zip -r webp-prototype.zip webp-prototype)
+          mkdir -p dist/obsidian-image-optimizer
+          cp main.js manifest.json dist/obsidian-image-optimizer/
+          (cd dist && zip -r obsidian-image-optimizer.zip obsidian-image-optimizer)
 
-      - name: Publish pre-release
+      - name: Publish release
         if: steps.version.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
         run: |
           gh release create "$VERSION" \
-            main.js manifest.json dist/webp-prototype.zip \
-            --prerelease \
+            main.js manifest.json dist/obsidian-image-optimizer.zip \
+            $PRERELEASE \
             --target "$GITHUB_SHA" \
-            --title "WebP prototype $VERSION" \
-            --notes "Prototype of in-app WebP conversion for desktop and mobile. Not for production vaults: test on a copy. Installation and test steps: prototype/mobile-webp/README.md."
+            --title "Image Optimizer $VERSION" \
+            --notes "Obsidian plugin that converts images to WebP on desktop and mobile. Installation: README.md, section \"Obsidian plugin\"."

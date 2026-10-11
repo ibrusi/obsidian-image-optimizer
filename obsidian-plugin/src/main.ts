@@ -1,5 +1,5 @@
 import { Notice, Platform, Plugin, TFile } from 'obsidian';
-import { download, type Downloaded } from './download.ts';
+import { download, type Downloaded } from './services/downloader.ts';
 import {
   DEFAULT_METHOD,
   DEFAULT_QUALITY,
@@ -9,13 +9,13 @@ import {
   encodeWithCanvas,
   loadEncoder,
   type EncoderVariant,
-} from './encoder.ts';
-import { findRemoteImages, replaceImages, type RemoteImage } from './links.ts';
+} from './codec/encoder.ts';
+import { findRemoteImages, replaceImages, type RemoteImage } from './domain/links.ts';
 import { formatBytes, formatMs, LOG_PATH, RunLog } from './log.ts';
-import { baseNameFromUrl } from './names.ts';
-import { extensionOf, imageTypeOf, isConvertible } from './sniff.ts';
+import { baseNameFromUrl } from './domain/names.ts';
+import { extensionOf, imageTypeOf, isConvertible } from './domain/sniff.ts';
 
-export default class WebpPrototypePlugin extends Plugin {
+export default class ImageOptimizerPlugin extends Plugin {
   private busy = false;
 
   async onload(): Promise<void> {
@@ -41,15 +41,15 @@ export default class WebpPrototypePlugin extends Plugin {
   // exclusive runs one task at a time: encoding is memory-hungry on phones.
   private async exclusive(task: () => Promise<void>): Promise<void> {
     if (this.busy) {
-      new Notice('WebP prototype is already running.');
+      new Notice('Image optimization is already running.');
       return;
     }
     this.busy = true;
     try {
       await task();
     } catch (error) {
-      new Notice(`WebP prototype failed: ${errorText(error)}`);
-      console.error('[webp-prototype]', error);
+      new Notice(`Image optimization failed: ${errorText(error)}`);
+      console.error('[image-optimizer]', error);
     } finally {
       this.busy = false;
     }

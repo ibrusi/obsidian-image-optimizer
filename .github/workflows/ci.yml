@@ -45,26 +45,11 @@ jobs:
       - name: Build
         run: go build -o bin/obsidian-img-opt ./cmd/obsidian-img-opt
 
-  plugin:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Check plugin syntax
-        run: node --check obsidian-plugin/main.js
-
-      - name: Validate manifest
-        run: node -e "JSON.parse(require('fs').readFileSync('obsidian-plugin/manifest.json', 'utf8'))"
-
-  webp-prototype:
+  obsidian-plugin:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: prototype/mobile-webp
+        working-directory: obsidian-plugin
     steps:
       - uses: actions/checkout@v4
 
@@ -73,7 +58,7 @@ jobs:
           # 22.18+ runs the TypeScript unit tests without a build step.
           node-version: 22
           cache: npm
-          cache-dependency-path: prototype/mobile-webp/package-lock.json
+          cache-dependency-path: obsidian-plugin/package-lock.json
 
       - run: npm ci
       - run: npm run typecheck

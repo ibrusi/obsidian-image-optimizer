@@ -25,7 +25,7 @@ export function extensionOf(type: ImageType): string {
   return EXTENSIONS[type];
 }
 
-// isConvertible reports whether the prototype re-encodes this type. GIFs may
+// isConvertible reports whether this type is re-encoded. GIFs may
 // be animated and canvas decoding keeps only the first frame; WebP is final.
 export function isConvertible(type: ImageType): boolean {
   return type === 'jpeg' || type === 'png' || type === 'bmp';

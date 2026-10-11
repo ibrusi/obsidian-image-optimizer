@@ -66,5 +66,6 @@ npm run test:browser   # encoder in Chromium and WebKit (needs Playwright browse
 npm run build          # main.js
 ```
 
-A release is published by pushing a tag equal to the manifest version, e.g.
-`0.1.0-prototype.1`.
+A release is published automatically on a push to `feat/mobile-webp-prototype`
+when no release exists for the version in `manifest.json`: to publish a new
+one, bump the version in `manifest.json` and `package.json`.

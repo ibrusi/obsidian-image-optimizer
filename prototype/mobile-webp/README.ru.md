@@ -70,5 +70,6 @@ npm run test:browser   # кодировщик в Chromium и WebKit (нужны 
 npm run build          # main.js
 ```
 
-Релиз публикуется пушем тега, равного версии в манифесте, например
-`0.1.0-prototype.1`.
+Релиз публикуется автоматически при пуше в ветку `feat/mobile-webp-prototype`,
+если релиза с версией из `manifest.json` ещё нет: чтобы выпустить новый,
+поднимите версию в `manifest.json` и `package.json`.

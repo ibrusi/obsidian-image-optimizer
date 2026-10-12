@@ -7,6 +7,8 @@ import simdFactory from '@jsquash/webp/codec/enc/webp_enc_simd.js';
 import animationFactory, { type AnimationModule } from 'wasm-webp/dist/esm/webp-wasm.js';
 import type { AnimationFrame, AnimationOptions, EncoderVariant, StillOptions, WasmBinaries } from './protocol.ts';
 
+const EMPTY = new ArrayBuffer(0);
+
 // Engine is the WebAssembly encoder itself. It runs inside the worker and,
 // when a worker cannot be started, on the main thread. It receives the .wasm
 // bytes instead of importing them, so the worker bundle stays small.
@@ -47,7 +49,9 @@ export class Engine {
 
   // encodeAnimation encodes full-canvas RGBA frames into an animated WebP
   // with libwebp's WebPAnimEncoder, which stores only what changes between
-  // frames. Its module is compiled on the first animation only.
+  // frames. Its module is compiled on the first animation only. Each frame is
+  // released as soon as it is copied into the encoder's heap, so the frames
+  // are held once, not twice.
   async encodeAnimation(width: number, height: number, frames: AnimationFrame[], options: AnimationOptions): Promise<Uint8Array> {
     this.animation ??= animationFactory({
       wasmBinary: new Uint8Array(this.animationWasm),
@@ -56,13 +60,14 @@ export class Engine {
     const module = await this.animation;
     const vector = new module.VectorWebPAnimationFrame();
     try {
-      for (const frame of frames) {
+      for (let i = 0; i < frames.length; i++) {
         vector.push_back({
-          data: new Uint8Array(frame.rgba),
-          duration: frame.durationMs,
+          data: new Uint8Array(frames[i].rgba),
+          duration: frames[i].durationMs,
           config: { lossless: 0, quality: options.quality },
           has_config: true,
         });
+        frames[i] = { rgba: EMPTY, durationMs: frames[i].durationMs };
       }
       const result = module.encodeAnimation(width, height, true, vector);
       if (!result || result.length === 0) throw new Error('animated WebP encoding failed');

@@ -1,6 +1,6 @@
 {
   "name": "obsidian-image-optimizer",
-  "version": "2.0.0-beta.3",
+  "version": "2.0.0-beta.4",
   "private": true,
   "type": "module",
   "description": "Obsidian plugin: download images and convert them to WebP on desktop and mobile",

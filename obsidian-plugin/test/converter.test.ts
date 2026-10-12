@@ -83,3 +83,11 @@ test('GIFs are kept with gifMode keep, or when the animation is over the budget'
   assert.match(huge.detail, /30 frames/);
   assert.deepEqual(calls, [], 'nothing decoded or encoded');
 });
+
+test('an animation within the megapixel limit is converted: frames count once', async () => {
+  const calls: string[] = [];
+  // 35 frames of 100×100 = 0.35 MP, the shape of a typical GIF scaled down.
+  const result = await convert(animatedGif(35, 100), 'gif', { ...settings, maxMegapixels: 0.36 }, deps(10, calls));
+  assert.equal(result.replaced, true, result.detail);
+  assert.equal(calls.length, 1);
+});

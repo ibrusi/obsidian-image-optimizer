@@ -49,7 +49,7 @@ With **Convert on paste and drop** enabled (default), pasted and dropped images 
 | Convert images already in the vault | on | Commands also convert local JPG/PNG/BMP/GIF and move the originals to `.trash`. |
 | Convert on paste and drop | on | See above. |
 | Maximum download, MB | `30` | Larger downloads are refused. |
-| Maximum image size, megapixels | `50` | Larger images are kept as they are (for animations: width × height × frames, half of this budget), to protect memory on phones. |
+| Maximum image size, megapixels | `50` | Larger images are kept as they are (for animations: width × height × frames), to protect memory on phones. |
 | Allow private network addresses | off | By default links to `localhost`, `*.local` and private, loopback and link-local IP addresses are refused, so a note from an untrusted source cannot probe your network. |
 | Write a log note | off | Appends details of every run to `image-optimizer-log.md`. |
 

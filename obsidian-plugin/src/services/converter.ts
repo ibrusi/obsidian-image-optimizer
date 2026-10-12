@@ -65,10 +65,6 @@ export async function convert(
   };
 }
 
-// Decoded frames are held twice, in JavaScript and in the encoder's heap, so
-// animations get half of the pixel budget of still images.
-const ANIMATION_BUDGET_SHARE = 0.5;
-
 // convertAnimatedGif returns null for single-frame GIFs.
 async function convertAnimatedGif(
   input: ArrayBuffer,
@@ -83,7 +79,8 @@ async function convertAnimatedGif(
   if (info.frames <= 1) return null;
 
   const pixels = info.width * info.height * info.frames;
-  if (pixels > settings.maxMegapixels * 1e6 * ANIMATION_BUDGET_SHARE) {
+  // All decoded frames are in memory at once: their total counts.
+  if (pixels > settings.maxMegapixels * 1e6) {
     return keep(`animation too large to convert: ${info.frames} frames, ${megapixels(pixels)} MP in total`);
   }
   signal?.throwIfAborted();

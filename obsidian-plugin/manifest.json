@@ -1,7 +1,7 @@
 {
   "id": "obsidian-image-optimizer",
   "name": "Image Optimizer",
-  "version": "2.0.0-beta.3",
+  "version": "2.0.0-beta.4",
   "minAppVersion": "1.5.7",
   "description": "Downloads images from notes and converts images to lightweight WebP on desktop and mobile, without external programs, and updates the links.",
   "author": "ibrusi",

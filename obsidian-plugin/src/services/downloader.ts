@@ -35,15 +35,17 @@ export class DownloadError extends Error {
 
 // download fetches an image the way a browser showing the page would, and
 // accepts it only if its bytes are an image: hotlink protection often answers
-// 200 with an HTML page. A .webp the site no longer serves (404) is looked
-// for in its original format next to it.
+// 200 with an HTML page. A .webp the site does not serve is looked for in its
+// original format next to it. "Not there" is a 404, or a 403 from storage
+// such as Amazon S3 or MinIO, which answers AccessDenied instead of 404 for a
+// missing file when listing is not allowed (static.xakep.ru does so).
 export async function download(http: HttpPort, url: string, options: DownloadOptions): Promise<Downloaded> {
   const attempts: string[] = [];
   try {
     return await downloadOne(http, url, options, attempts);
   } catch (error) {
     if (options.signal?.aborted) throw error;
-    if (error instanceof HttpError && error.status === 404) {
+    if (error instanceof HttpError && (error.status === 404 || error.status === 403)) {
       for (const original of originalUrlsFor(url)) {
         try {
           return await downloadOne(http, original, options, attempts);
@@ -82,9 +84,13 @@ async function downloadOne(http: HttpPort, url: string, options: DownloadOptions
   return { data, type, url };
 }
 
+/** HTTP clients that refused a Referer once: later requests go without it. */
+const refusesReferer = new WeakSet<HttpPort>();
+
 // request sends the browser's headers. If the request fails without an
-// answer (Obsidian on desktop answers net::ERR_BLOCKED_BY_CLIENT to some
-// requests carrying a Referer), it is sent once more without the Referer.
+// answer, it is sent once more without the Referer: Obsidian on desktop
+// refuses every request carrying one (net::ERR_BLOCKED_BY_CLIENT), so after
+// the first refusal the Referer is no longer tried with that client.
 async function request(http: HttpPort, url: string, options: DownloadOptions, attempts: string[]): Promise<HttpResponse> {
   const send = async (referer: string | undefined) => {
     const headers: Record<string, string> = { Accept: IMAGE_ACCEPT };
@@ -99,11 +105,12 @@ async function request(http: HttpPort, url: string, options: DownloadOptions, at
       throw error;
     }
   };
-  if (!options.referer) return send(undefined);
+  if (!options.referer || refusesReferer.has(http)) return send(undefined);
   try {
     return await send(options.referer);
   } catch (error) {
     if (options.signal?.aborted || isTimeout(error)) throw error;
+    refusesReferer.add(http);
     return send(undefined);
   }
 }

@@ -40,8 +40,6 @@ Until then, or for test versions, install it with **BRAT**:
 
 Manual installation: download `image-optimizer.zip` from the [latest release](https://github.com/ibrusi/obsidian-image-optimizer/releases), unpack it into `<vault>/.obsidian/plugins/` (the `.obsidian` folder is hidden) and enable the plugin.
 
-**Upgrading from 2.0.0 beta versions.** The plugin id changed from `obsidian-image-optimizer` to `image-optimizer` (the catalogue does not allow "obsidian" in an id), so version 1.0.0 installs as a new plugin. On its first start it takes over the settings of the beta and reminds you to uninstall it: with both enabled, every paste would be handled twice.
-
 ### Usage
 Open the command palette (`Ctrl/Cmd+P` on a computer; on a phone swipe down in a note or use the menu) and type **image**:
 

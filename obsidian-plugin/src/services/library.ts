@@ -18,9 +18,11 @@ export interface Found {
 // ImageLibrary saves images without duplicates. Every saved file carries
 // the source tag of its original in its name (see domain/source-tag.ts), so
 // the same original seen again is found among the vault's file names before
-// anything is encoded, on any device. Files saved before tags existed are
-// still found by comparing bytes with files of the same name. With reuse
-// off, nothing is looked up or tagged and every image is a new file.
+// anything is encoded, on any device. After encoding, a file anywhere in the
+// vault with exactly the same bytes is reused too: it catches the same
+// picture arriving as a different original (a PNG re-saved by the clipboard)
+// and files saved before tags existed. With reuse off, nothing is looked up
+// or tagged and every image is a new file.
 export class ImageLibrary {
   private readonly vault: VaultPort;
   private readonly reuse: boolean;
@@ -68,10 +70,10 @@ export class ImageLibrary {
       (type === 'jpeg' && want.width === have.height && want.height === have.width);
   }
 
-  // save writes data as stem-tag.ext in folder. A file saved before tags
-  // existed, named stem.ext with exactly these bytes, is reused instead.
+  // save writes data as stem-tag.ext in folder, or reuses a file in the
+  // vault with exactly these bytes.
   save(tag: string | null, folder: string, stem: string, ext: string, data: ArrayBuffer): Promise<Stored> {
-    return store(this.vault, folder, stem, ext, data, this.reuse, tag ? withTag(stem, tag) : stem);
+    return store(this.vault, folder, tag ? withTag(stem, tag) : stem, ext, data, this.reuse);
   }
 }
 

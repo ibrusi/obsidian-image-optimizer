@@ -6,7 +6,6 @@ import { optimizeNotes, type Progress } from '../src/services/vault-run.ts';
 import { FakeHttp, FakeLinks, FakeMetadata, memoryLibrary, MemoryVault, tagFor, testPng, testWebp } from './fakes.ts';
 
 const PNG = (fill = 3) => testPng(32, 24, fill);
-const WEBP = testWebp(32, 24, 40);
 const A_TAG = await tagFor(PNG());
 const P_TAG = await tagFor(PNG(4));
 
@@ -17,7 +16,8 @@ function context(vault: MemoryVault, http: FakeHttp, signal?: AbortSignal) {
     metadata: new FakeMetadata(vault),
     http,
     library: memoryLibrary(vault),
-    convert: async (): Promise<Converted> => ({ data: WEBP, ext: 'webp', replaced: true, detail: 'ok' }),
+    // Each image encodes to its own bytes, as different pictures do.
+    convert: async (data: ArrayBuffer): Promise<Converted> => ({ data: testWebp(32, 24, 40 + new Uint8Array(data)[100]), ext: 'webp', replaced: true, detail: 'ok' }),
     settings: { folder: 'Attachments', maxDownloadMB: 30, allowPrivateHosts: false },
     stats: new RunStats(),
     flush: async () => {},

@@ -48,3 +48,22 @@ test('store always writes a new file when reuse is off', async () => {
   const vault = new MemoryVault({ 'img/pic.webp': bytes('same image') });
   assert.deepEqual(await store(vault, 'img', 'pic', 'webp', bytes('same image'), false), { path: 'img/pic-1.webp', created: true });
 });
+
+test('store reuses identical bytes anywhere in the vault, from the target folder first', async () => {
+  const vault = new MemoryVault({
+    'other/pasted.webp': bytes('same image'),
+    'img/zzz.webp': bytes('same image'),
+    'img/size.webp': bytes('same sizeX'),
+  });
+  assert.deepEqual(await store(vault, 'img', 'pic', 'webp', bytes('same image'), true), { path: 'img/zzz.webp', created: false });
+  assert.deepEqual(await store(vault, 'new', 'pic', 'webp', bytes('same image'), true), { path: 'img/zzz.webp', created: false });
+});
+
+test('store reads only files of the same size and extension', async () => {
+  const vault = new MemoryVault({ 'a.webp': bytes('1234'), 'b.png': bytes('abcd'), 'c.webp': bytes('abcdef') });
+  const read: string[] = [];
+  const readBinary = vault.readBinary.bind(vault);
+  vault.readBinary = async (path) => { read.push(path); return readBinary(path); };
+  assert.equal((await store(vault, '', 'x', 'webp', bytes('abcd'), true)).created, true);
+  assert.deepEqual(read, ['a.webp']);
+});

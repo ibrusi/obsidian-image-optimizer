@@ -12,7 +12,7 @@ It is an **Obsidian plugin** (`obsidian-plugin/`) that works on **Windows, macOS
 
 ### What it does
 - **Downloads web images** (`![](https://…)` and `<img src="https://…">`) into a folder of your choice and points the embeds at the local files. Only real images are accepted: an HTML "hotlinking denied" page never replaces your link.
-- **Converts to WebP** — JPG, PNG and BMP to WebP, **animated GIFs to animated WebP**. A converted image is used only if it is at least 5% smaller (configurable); otherwise the original is kept.
+- **Converts to WebP** — JPG, PNG and BMP to WebP, **animated GIFs to animated WebP**. PNG, BMP and GIF are encoded both lossless and lossy, and the smaller file wins: screenshots and screen recordings usually come out lossless, pixel for pixel, photos and video clips lossy. JPG is encoded lossy only. A converted image is used only if it is at least 5% smaller (configurable); otherwise the original is kept.
 - **Converts images already in the vault**: the WebP is written next to the original, every link to it in every note is rewritten (embeds, links, properties; sizes such as `|200` are kept), and the original is moved to the vault's `.trash` folder, where it can be restored. An original that is still mentioned anywhere — a canvas, a property, plain text — is kept.
 - **Converts on paste and drop**: a pasted screenshot is saved as WebP right away; web images in pasted text are downloaded.
 - **Stays responsive**: encoding runs in a background worker, one image at a time; long runs show progress and can be stopped.
@@ -41,7 +41,7 @@ With **Convert on paste and drop** enabled (default), pasted and dropped images 
 | :--- | :--- | :--- |
 | Language | As in Obsidian | English or Russian. By default the plugin follows the Obsidian interface language, and uses English when that language is not available. |
 | Image folder | `Attachments` | Where downloaded and pasted images go: `Attachments` — a folder next to the note; `/Attachments` — one folder at the vault root; empty — the note's own folder. Converted local images stay next to their originals. |
-| Quality | `40` | WebP quality, 1–100. |
+| Quality | `40` | Lossy WebP quality, 1–100. Lossless encoding does not depend on it. |
 | Compression effort | `4` | libwebp method, 0–6. `6` gives files about 5% smaller but is several times slower — noticeable on phones. |
 | Minimum saving, % | `5` | Keep the original unless the WebP is at least this much smaller. |
 | GIF | Convert to WebP | Or keep GIFs as they are. |

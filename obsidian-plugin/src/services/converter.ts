@@ -1,6 +1,6 @@
 import { dimensionsOf } from '../domain/dimensions.ts';
 import { decodeGif, scanGif } from '../domain/gif.ts';
-import { worthReplacing } from '../domain/policy.ts';
+import { type Compression, compressionsFor, worthReplacing } from '../domain/policy.ts';
 import { extensionOf, type ImageType } from '../domain/sniff.ts';
 import type { AnimationFrame, AnimationOptions, StillOptions } from '../codec/protocol.ts';
 import type { PluginSettings } from '../settings.ts';
@@ -51,18 +51,43 @@ export async function convert(
     return keep(`too large to convert: ${megapixels(size.width * size.height)} MP`);
   }
 
-  signal?.throwIfAborted();
-  const pixels = await deps.decode(input);
-  const encoded = await deps.encodeStill(pixels, { quality: settings.quality, method: settings.method }, signal);
-  if (!worthReplacing(input.byteLength, encoded.data.byteLength, settings.minSavingsPercent)) {
-    return keep(`WebP saves less than ${settings.minSavingsPercent}% (${formatBytes(encoded.data.byteLength)})`);
+  // The image is decoded for every attempt: the encoder takes ownership of
+  // the pixels, and decoding again costs less memory than keeping a copy.
+  const best = await smallest(compressionsFor(type), async (compression) => {
+    const pixels = await deps.decode(input);
+    return deps.encodeStill(pixels, { compression, quality: settings.quality, method: settings.method }, signal);
+  }, signal);
+  if (!worthReplacing(input.byteLength, best.data.byteLength, settings.minSavingsPercent)) {
+    return keep(`WebP saves less than ${settings.minSavingsPercent}% (${formatBytes(best.data.byteLength)})`);
   }
   return {
-    data: encoded.data,
+    data: best.data,
     ext: 'webp',
     replaced: true,
-    detail: `${formatBytes(input.byteLength)} → ${formatBytes(encoded.data.byteLength)}`,
+    detail: `${best.compression}, ${formatBytes(input.byteLength)} → ${formatBytes(best.data.byteLength)}`,
   };
+}
+
+interface Candidate {
+  data: ArrayBuffer;
+  compression: Compression;
+}
+
+// smallest encodes with each compression in turn and keeps the smallest
+// result; on a tie the earlier compression wins.
+async function smallest(
+  compressions: readonly Compression[],
+  encode: (compression: Compression) => Promise<{ data: ArrayBuffer }>,
+  signal?: AbortSignal,
+): Promise<Candidate> {
+  let best: Candidate | null = null;
+  for (const compression of compressions) {
+    signal?.throwIfAborted();
+    const { data } = await encode(compression);
+    if (!best || data.byteLength < best.data.byteLength) best = { data, compression };
+  }
+  if (!best) throw new Error('no compression to try');
+  return best;
 }
 
 // convertAnimatedGif returns null for single-frame GIFs.
@@ -83,18 +108,21 @@ async function convertAnimatedGif(
   if (pixels > settings.maxMegapixels * 1e6) {
     return keep(`animation too large to convert: ${info.frames} frames, ${megapixels(pixels)} MP in total`);
   }
-  signal?.throwIfAborted();
-  const gif = decodeGif(bytes);
-  const frames = gif.frames.map((f) => ({ rgba: f.rgba.buffer, durationMs: f.durationMs }));
-  const encoded = await deps.encodeAnimation({ width: gif.width, height: gif.height, frames }, { quality: settings.quality }, signal);
-  if (!worthReplacing(input.byteLength, encoded.data.byteLength, settings.minSavingsPercent)) {
-    return keep(`animated WebP saves less than ${settings.minSavingsPercent}% (${formatBytes(encoded.data.byteLength)})`);
+  // Screen recordings are smallest lossless, clips of video lossy. The GIF
+  // is decoded for every attempt, as the encoder takes the frames.
+  const best = await smallest(compressionsFor('gif'), (compression) => {
+    const gif = decodeGif(bytes);
+    const frames = gif.frames.map((f) => ({ rgba: f.rgba.buffer, durationMs: f.durationMs }));
+    return deps.encodeAnimation({ width: gif.width, height: gif.height, frames }, { compression, quality: settings.quality }, signal);
+  }, signal);
+  if (!worthReplacing(input.byteLength, best.data.byteLength, settings.minSavingsPercent)) {
+    return keep(`animated WebP saves less than ${settings.minSavingsPercent}% (${formatBytes(best.data.byteLength)})`);
   }
   return {
-    data: encoded.data,
+    data: best.data,
     ext: 'webp',
     replaced: true,
-    detail: `${info.frames} frames, ${formatBytes(input.byteLength)} → ${formatBytes(encoded.data.byteLength)}`,
+    detail: `${info.frames} frames, ${best.compression}, ${formatBytes(input.byteLength)} → ${formatBytes(best.data.byteLength)}`,
   };
 }
 

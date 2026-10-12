@@ -3,14 +3,15 @@ import { pastedImageStem } from '../domain/names.ts';
 import { extensionOf, imageTypeOf, type ImageType } from '../domain/sniff.ts';
 import type { PluginSettings } from '../settings.ts';
 import type { Converted } from './converter.ts';
+import { IDENTICAL, type ImageLibrary, REUSED } from './library.ts';
 import type { VaultPort } from './ports.ts';
 import type { RunStats } from './stats.ts';
-import { store } from './storage.ts';
 
 export interface PasteContext {
   vault: VaultPort;
+  library: ImageLibrary;
   convert(data: ArrayBuffer, type: ImageType, signal?: AbortSignal): Promise<Converted>;
-  settings: Pick<PluginSettings, 'folder' | 'reuseIdentical'>;
+  settings: Pick<PluginSettings, 'folder'>;
   stats: RunStats;
   signal?: AbortSignal;
 }
@@ -27,17 +28,24 @@ export async function savePastedImage(
 ): Promise<string | null> {
   const type = imageTypeOf(new Uint8Array(data, 0, Math.min(data.byteLength, 16)));
   if (!type) return null;
+  const label = fileName || 'pasted image';
+
+  const found = await ctx.library.find(data, type);
+  if (found.path) {
+    ctx.stats.saved(label, data.byteLength, ctx.vault.size(found.path) ?? data.byteLength, `→ ${found.path}: ${REUSED}`);
+    return found.path;
+  }
 
   let converted: Converted;
   try {
     converted = await ctx.convert(data, type, ctx.signal);
   } catch (error) {
-    ctx.stats.lines.push(`${fileName || 'pasted image'}: saved unconverted (${error instanceof Error ? error.message : String(error)})`);
+    ctx.stats.lines.push(`${label}: saved unconverted (${error instanceof Error ? error.message : String(error)})`);
     converted = { data, ext: extensionOf(type), replaced: false, detail: 'saved unconverted' };
   }
   const noteDir = notePath.includes('/') ? notePath.slice(0, notePath.lastIndexOf('/')) : '/';
-  const { path, created } = await store(ctx.vault, resolveFolder(ctx.settings.folder, noteDir), pastedImageStem(fileName, now), converted.ext, converted.data, ctx.settings.reuseIdentical);
-  ctx.stats.saved(fileName || 'pasted image', data.byteLength, converted.data.byteLength,
-    `→ ${path}${created ? '' : ' (identical file already in the vault, reused)'}: ${converted.detail}`);
+  const folder = resolveFolder(ctx.settings.folder, noteDir);
+  const { path, created } = await ctx.library.save(found.tag, folder, pastedImageStem(fileName, now), converted.ext, converted.data);
+  ctx.stats.saved(label, data.byteLength, converted.data.byteLength, `→ ${path}: ${created ? converted.detail : IDENTICAL}`);
   return path;
 }

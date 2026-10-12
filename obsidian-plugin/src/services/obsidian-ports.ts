@@ -54,6 +54,10 @@ export class ObsidianVault implements VaultPort {
     await this.app.vault.trash(this.file(path), false);
   }
 
+  allFiles(): string[] {
+    return this.app.vault.getFiles().map((file) => file.path);
+  }
+
   textFiles(): string[] {
     return this.app.vault.getFiles()
       .filter((file) => file.extension === 'md' || file.extension === 'canvas')
@@ -115,3 +119,4 @@ export class ObsidianHttp implements HttpPort {
     return { status: response.status, body: response.arrayBuffer };
   }
 }
+

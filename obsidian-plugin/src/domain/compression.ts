@@ -4,9 +4,10 @@
 // can be a screenshot or a photo, a GIF a screen recording or a video clip.
 // Measured on screenshots, diagrams, renders and photos, the number of
 // distinct colours separates them: up to about a thousand colours lossless
-// won every time, from several thousand lossy did. Animations are told apart the same way, and by how
-// much of the picture changes between frames: lossy noise differs from frame
-// to frame, which defeats storing only the changed regions.
+// won every time, from several thousand lossy did. Animations are told apart
+// the same way, and by how much of the picture changes between frames: lossy
+// noise differs from frame to frame, which defeats storing only the changed
+// regions.
 //
 // Clear cases are encoded once, in the mode they call for, and fall back to
 // the other mode only if the first gave no saving. Unclear cases try both.

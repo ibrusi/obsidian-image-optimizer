@@ -23,10 +23,31 @@ export function dimensionsOf(bytes: Uint8Array, type: ImageType): Dimensions | n
       case 'jpeg':
         return jpegDimensions(bytes, view);
       case 'webp':
-        return null;
+        return webpDimensions(bytes, view);
     }
   } catch {
     return null; // truncated header
+  }
+}
+
+// webpDimensions reads the canvas of an extended file (VP8X, used for
+// animation and metadata), or the frame of a simple lossy (VP8) or lossless
+// (VP8L) one.
+function webpDimensions(bytes: Uint8Array, view: DataView): Dimensions | null {
+  const chunk = String.fromCharCode(...bytes.subarray(12, 16));
+  switch (chunk) {
+    case 'VP8X':
+      return { width: 1 + (view.getUint32(24, true) & 0xffffff), height: 1 + (view.getUint32(26, true) >>> 8) };
+    case 'VP8 ':
+      if (bytes[23] !== 0x9d || bytes[24] !== 0x01 || bytes[25] !== 0x2a) return null;
+      return { width: view.getUint16(26, true) & 0x3fff, height: view.getUint16(28, true) & 0x3fff };
+    case 'VP8L': {
+      if (bytes[20] !== 0x2f) return null;
+      const bits = view.getUint32(21, true);
+      return { width: 1 + (bits & 0x3fff), height: 1 + ((bits >>> 14) & 0x3fff) };
+    }
+    default:
+      return null;
   }
 }
 

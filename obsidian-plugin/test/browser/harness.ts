@@ -4,6 +4,7 @@ import { WASM } from '../../src/codec/assets.ts';
 import { MainThreadCodec, WorkerCodec } from '../../src/codec/codec.ts';
 import { Engine } from '../../src/codec/engine.ts';
 import type { EncoderVariant } from '../../src/codec/protocol.ts';
+import { dimensionsOf } from '../../src/domain/dimensions.ts';
 import { decodeGif, scanGif } from '../../src/domain/gif.ts';
 import animatedGif from '../fixtures/animated.gif';
 
@@ -102,6 +103,10 @@ function equal(a: ArrayBuffer, b: ArrayBuffer): boolean {
 
     const lossless = await worker.encodeStill(copy(image), { ...options, compression: 'lossless' });
     const decoded = await pixelsOf(lossless.data);
+    const sized = (data: ArrayBuffer) => JSON.stringify(dimensionsOf(new Uint8Array(data), 'webp'));
+    const want = JSON.stringify({ width: image.width, height: image.height });
+    check('WebP headers give the image size (lossy VP8, lossless VP8L)',
+      sized(viaWorker.data) === want && sized(lossless.data) === want, `${sized(viaWorker.data)}, ${sized(lossless.data)}`);
     check('lossless WebP is pixel-exact', decoded.data.every((v, i) => v === image.data[i]),
       `${lossless.data.byteLength} B lossless vs ${viaWorker.data.byteLength} B lossy`);
 
@@ -170,6 +175,9 @@ async function checkAnimation(check: CheckFn, worker: WorkerCodec, inThread: Mai
     if (reference[p + 3] !== first.data[p + 3] ||
       (reference[p + 3] !== 0 && (reference[p] !== first.data[p] || reference[p + 1] !== first.data[p + 1] || reference[p + 2] !== first.data[p + 2]))) differing++;
   }
+  const canvas = dimensionsOf(new Uint8Array(lossless.data), 'webp');
+  check('animated WebP header gives the canvas size (VP8X)', canvas?.width === gif.width && canvas?.height === gif.height,
+    JSON.stringify(canvas));
   check('lossless animated WebP keeps the first frame exactly', differing === 0,
     `${differing} differing pixels, ${lossless.data.byteLength} B lossless vs ${viaWorker.data.byteLength} B lossy`);
 }

@@ -6,6 +6,7 @@ import { resolveLanguage, type Strings, stringsFor } from './i18n.ts';
 import { LOG_PATH, RunLog } from './log.ts';
 import { convert, type ConvertDeps } from './services/converter.ts';
 import { JobQueue } from './services/job-queue.ts';
+import { ImageLibrary } from './services/library.ts';
 import type { LocalContext } from './services/local-images.ts';
 import { ObsidianHttp, ObsidianLinks, ObsidianMetadata, ObsidianVault } from './services/obsidian-ports.ts';
 import { savePastedImage } from './services/pasted-images.ts';
@@ -204,8 +205,10 @@ export default class ImageOptimizerPlugin extends Plugin {
       encodeAnimation: (animation, options, s) => codec.encodeAnimation(animation, options, s),
     };
     const settings = this.settings;
+    const vault = new ObsidianVault(this.app);
     return {
-      vault: new ObsidianVault(this.app),
+      vault,
+      library: new ImageLibrary(vault, settings.reuseIdentical),
       links: new ObsidianLinks(this.app),
       metadata: new ObsidianMetadata(this.app),
       http: new ObsidianHttp(),

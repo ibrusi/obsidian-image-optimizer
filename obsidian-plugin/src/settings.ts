@@ -1,8 +1,11 @@
 import { normalizeFolder, validateFolder } from './domain/folders.ts';
+import type { LanguageSetting } from './i18n.ts';
 
 export type GifMode = 'animated-webp' | 'keep';
 
 export interface PluginSettings {
+  /** Interface language; "auto" follows Obsidian. */
+  language: LanguageSetting;
   /** Folder for downloaded and pasted images, see domain/folders.ts. */
   folder: string;
   /** WebP quality, 1–100. */
@@ -27,6 +30,7 @@ export interface PluginSettings {
 }
 
 export const DEFAULT_SETTINGS: Readonly<PluginSettings> = Object.freeze({
+  language: 'auto',
   folder: 'Attachments',
   quality: 40,
   method: 4,
@@ -61,6 +65,7 @@ export function normalizeSettings(raw: unknown): PluginSettings {
     : DEFAULT_SETTINGS.folder;
 
   return {
+    language: data.language === 'en' || data.language === 'ru' ? data.language : 'auto',
     folder,
     quality: clampInt(data.quality, 'quality'),
     method: clampInt(data.method, 'method'),

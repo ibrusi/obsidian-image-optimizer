@@ -1,7 +1,8 @@
-import { MarkdownView, Notice, Plugin, TFile } from 'obsidian';
+import { type Command, getLanguage, MarkdownView, Notice, Plugin, TFile } from 'obsidian';
 import { WASM } from './codec/assets.ts';
 import { type Codec, createCodec } from './codec/codec.ts';
 import { decode } from './codec/decode.ts';
+import { resolveLanguage, type Strings, stringsFor } from './i18n.ts';
 import { LOG_PATH, RunLog } from './log.ts';
 import { convert, type ConvertDeps } from './services/converter.ts';
 import { JobQueue } from './services/job-queue.ts';
@@ -25,17 +26,20 @@ interface Run {
 
 export default class ImageOptimizerPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS };
+  strings: Strings = stringsFor('en');
+  /** Registered commands with the key of their name, renamed when the language changes. */
+  private readonly commands: Array<{ command: Command; prefix: string; key: keyof Strings['commands'] }> = [];
   private codec: Promise<Codec> | null = null;
   private codecFallback: string | null = null;
   private readonly queue = new JobQueue();
 
   async onload(): Promise<void> {
     this.settings = normalizeSettings(await this.loadData());
+    this.strings = stringsFor(resolveLanguage(this.settings.language, appLanguage()));
     this.addSettingTab(new ImageOptimizerSettingTab(this.app, this));
 
-    this.addCommand({
+    this.command('optimizeNote', {
       id: 'optimize-note',
-      name: 'Optimize images in the current note',
       checkCallback: (checking) => {
         const note = this.app.workspace.getActiveFile();
         if (!note || note.extension !== 'md') return false;
@@ -43,14 +47,12 @@ export default class ImageOptimizerPlugin extends Plugin {
         return true;
       },
     });
-    this.addCommand({
+    this.command('optimizeVault', {
       id: 'optimize-vault',
-      name: 'Optimize images in the whole vault',
       callback: () => void this.enqueue((signal) => this.optimizeVault(signal)),
     });
-    this.addCommand({
+    this.command('stop', {
       id: 'stop',
-      name: 'Stop image optimization',
       checkCallback: (checking) => {
         if (!this.queue.busy) return false;
         if (!checking) this.queue.cancelAll();
@@ -71,17 +73,32 @@ export default class ImageOptimizerPlugin extends Plugin {
     await this.saveData(this.settings);
   }
 
+  applyLanguage(): void {
+    this.strings = stringsFor(resolveLanguage(this.settings.language, appLanguage()));
+    for (const { command, prefix, key } of this.commands) command.name = prefix + this.strings.commands[key];
+  }
+
+  // command registers a command under its name in the current language.
+  // Obsidian prefixes the name with the plugin's; the prefix is kept so the
+  // command can be renamed in place when the language changes.
+  private command(key: keyof Strings['commands'], command: Omit<Command, 'name'>): void {
+    const name = this.strings.commands[key];
+    const registered = this.addCommand({ ...command, name });
+    const prefix = registered.name.endsWith(name) ? registered.name.slice(0, -name.length) : null;
+    if (prefix !== null) this.commands.push({ command: registered, prefix, key });
+  }
+
   // optimizeNote saves the web images of the note locally and converts its
   // local images, rewriting links everywhere in the vault.
   private async optimizeNote(note: TFile, signal: AbortSignal): Promise<void> {
     const run = this.newRun();
-    const notice = new Notice('Optimizing images…', 0);
+    const notice = new Notice(this.strings.notices.optimizing, 0);
     try {
       const ctx = await this.context(run, signal);
       await optimizeNotes([note.path], ctx, { convertLocal: this.settings.convertLocal, onProgress: () => {} });
     } finally {
       notice.hide();
-      await this.report(run, `note: ${note.path}`, run.stats.total === 0 ? 'No images to optimize in this note.' : undefined);
+      await this.report(run, `note: ${note.path}`, run.stats.total === 0 ? this.strings.notices.noImages : undefined);
     }
   }
 
@@ -95,22 +112,23 @@ export default class ImageOptimizerPlugin extends Plugin {
     // The window's Stop button and the "Stop" command both end the run.
     const stop = new AbortController();
     signal.addEventListener('abort', () => stop.abort(signal.reason), { once: true });
-    const modal = new ProgressModal(this.app, () => stop.abort(new DOMException('Cancelled', 'AbortError')));
+    const modal = new ProgressModal(this.app, this.strings, () => stop.abort(new DOMException('Cancelled', 'AbortError')));
     modal.open();
     try {
       const ctx = await this.context(run, stop.signal);
       await optimizeNotes(notes, ctx, {
         convertLocal: this.settings.convertLocal,
-        onProgress: (progress) => modal.update(progress, run.stats.summary()),
+        onProgress: (progress) => modal.update(progress, run.stats.summary(this.strings)),
       });
     } finally {
       modal.finish();
-      await this.report(run, 'vault', `${stop.signal.aborted ? 'Stopped. ' : ''}${run.stats.summary()}`);
+      await this.report(run, 'vault', `${stop.signal.aborted ? this.strings.notices.stopped : ''}${run.stats.summary(this.strings)}`);
     }
   }
 
   private readonly pasteActions: PasteActions = {
     enabled: () => this.settings.autoOnPaste,
+    placeholder: () => this.strings.placeholder,
     saveImages: (files, notePath, placeholder) => {
       // The clipboard is read right away, and the job is not cancellable:
       // a pasted image exists nowhere else, so it is always saved.
@@ -145,7 +163,7 @@ export default class ImageOptimizerPlugin extends Plugin {
     }
     const placed = await replacePlaceholder(placeholder, embeds.join('\n'), (fn) => this.app.vault.process(this.noteFile(notePath), fn));
     if (!placed && embeds.length > 0) {
-      new Notice(`The pasted image was saved, but its place in the note was deleted: ${embeds.join(', ')}`, 10_000);
+      new Notice(this.strings.notices.placeDeleted(embeds.join(', ')), 10_000);
     }
     await this.report(run, `paste: ${notePath}`, null);
   }
@@ -153,12 +171,12 @@ export default class ImageOptimizerPlugin extends Plugin {
   // enqueue runs a job after the ones already queued. Jobs share one queue:
   // encoding is memory-hungry on phones. A cancelled job reports itself.
   private async enqueue(job: (signal: AbortSignal) => Promise<void>, cancellable = true): Promise<void> {
-    if (this.queue.busy && cancellable) new Notice('Image optimization will start when the current one finishes.');
+    if (this.queue.busy && cancellable) new Notice(this.strings.notices.queued);
     try {
       await this.queue.run(job, cancellable);
     } catch (error) {
       if (isAbort(error)) return;
-      new Notice(`Image optimization failed: ${errorText(error)}`);
+      new Notice(this.strings.notices.failed(errorText(error)));
       console.error('[image-optimizer]', error);
     }
   }
@@ -173,8 +191,8 @@ export default class ImageOptimizerPlugin extends Plugin {
     for (const line of run.stats.lines) run.log.add(line);
     if (this.settings.writeLogNote) await run.log.flush(title);
     if (message === null && run.stats.failed === 0) return;
-    const details = this.settings.writeLogNote ? `. Details: ${LOG_PATH}` : '';
-    new Notice((message ?? run.stats.summary()) + details, 10_000);
+    const details = this.settings.writeLogNote ? this.strings.notices.details(LOG_PATH) : '';
+    new Notice((message ?? run.stats.summary(this.strings)) + details, 10_000);
   }
 
   private async context(run: Run, signal?: AbortSignal): Promise<RunContext> {
@@ -226,6 +244,18 @@ export default class ImageOptimizerPlugin extends Plugin {
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) throw new Error(`note not found: ${path}`);
     return file;
+  }
+}
+
+// appLanguage returns the Obsidian interface language. getLanguage exists
+// since Obsidian 1.8.7; older versions keep the language in local storage,
+// where no value means English.
+function appLanguage(): string {
+  if (typeof getLanguage === 'function') return getLanguage();
+  try {
+    return window.localStorage.getItem('language') ?? 'en';
+  } catch {
+    return 'en';
   }
 }
 

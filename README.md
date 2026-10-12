@@ -39,6 +39,7 @@ With **Convert on paste and drop** enabled (default), pasted and dropped images 
 ### Settings
 | Setting | Default | Description |
 | :--- | :--- | :--- |
+| Language | As in Obsidian | English or Russian. By default the plugin follows the Obsidian interface language, and uses English when that language is not available. |
 | Image folder | `Attachments` | Where downloaded and pasted images go: `Attachments` — a folder next to the note; `/Attachments` — one folder at the vault root; empty — the note's own folder. Converted local images stay next to their originals. |
 | Quality | `40` | WebP quality, 1–100. |
 | Compression effort | `4` | libwebp method, 0–6. `6` gives files about 5% smaller but is several times slower — noticeable on phones. |
@@ -50,7 +51,7 @@ With **Convert on paste and drop** enabled (default), pasted and dropped images 
 | Maximum download, MB | `30` | Larger downloads are refused. |
 | Maximum image size, megapixels | `50` | Larger images are kept as they are (for animations: width × height × frames), to protect memory on phones. |
 | Allow private network addresses | off | By default links to `localhost`, `*.local` and private, loopback and link-local IP addresses are refused, so a note from an untrusted source cannot probe your network. |
-| Write a log note | off | Appends details of every run to `image-optimizer-log.md`. |
+| Write a log note | off | Appends details of every run to `image-optimizer-log.md` (in English, for troubleshooting). |
 
 Plugin settings are stored in `.obsidian/plugins/obsidian-image-optimizer/data.json`; if your sync does not copy `.obsidian/plugins`, set them on every device.
 

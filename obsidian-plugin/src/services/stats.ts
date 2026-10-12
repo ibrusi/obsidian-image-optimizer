@@ -1,3 +1,4 @@
+import type { Strings } from '../i18n.ts';
 import { formatBytes } from './converter.ts';
 
 // RunStats collects the outcome of one run for the summary notice and the
@@ -32,11 +33,14 @@ export class RunStats {
     return this.converted + this.kept + this.failed;
   }
 
-  summary(): string {
-    const parts = [`${this.converted} image(s) converted`];
-    if (this.bytesBefore > 0) parts.push(`${formatBytes(this.bytesBefore)} → ${formatBytes(this.bytesAfter)}`);
-    if (this.kept) parts.push(`${this.kept} kept as is`);
-    if (this.failed) parts.push(`${this.failed} failed`);
-    return parts.join(', ');
+  summary(strings: Strings): string {
+    const bytes = this.bytesBefore > 0;
+    return strings.summary({
+      converted: this.converted,
+      kept: this.kept,
+      failed: this.failed,
+      before: bytes ? formatBytes(this.bytesBefore) : '',
+      after: bytes ? formatBytes(this.bytesAfter) : '',
+    });
   }
 }

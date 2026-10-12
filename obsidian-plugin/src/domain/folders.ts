@@ -1,3 +1,5 @@
+import type { FolderError } from '../i18n.ts';
+
 // Folder settings are vault paths written by the user:
 //   "Attachments"        -> a folder next to the note ("notes/Attachments")
 //   "/Attachments/webp"  -> a folder from the vault root
@@ -16,14 +18,14 @@ export function normalizeFolder(setting: string): string {
   return rooted ? `/${body}` : body;
 }
 
-// validateFolder returns an error message, or null for a valid setting.
+// validateFolder returns what is wrong with a setting, or null if it is valid.
 // Hidden segments are rejected: Obsidian does not index hidden folders, so
 // images saved there would not render in notes.
-export function validateFolder(setting: string): string | null {
+export function validateFolder(setting: string): FolderError | null {
   for (const segment of normalizeFolder(setting).split('/').filter(Boolean)) {
-    if (segment === '.' || segment === '..') return 'The folder must not contain "." or ".." segments.';
-    if (segment.startsWith('.')) return `Hidden folders are not shown by Obsidian: "${segment}".`;
-    if (FORBIDDEN.test(segment)) return `The folder name contains a character Obsidian does not allow: "${segment}".`;
+    if (segment === '.' || segment === '..') return { kind: 'dots' };
+    if (segment.startsWith('.')) return { kind: 'hidden', segment };
+    if (FORBIDDEN.test(segment)) return { kind: 'forbidden', segment };
   }
   return null;
 }

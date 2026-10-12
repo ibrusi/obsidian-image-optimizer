@@ -3,6 +3,8 @@ import { findRemoteImages } from '../domain/links.ts';
 
 export interface PasteActions {
   enabled(): boolean;
+  /** Text of the placeholder shown until a pasted image is saved. */
+  placeholder(): string;
   /** Saves pasted image files and returns the embed for each, in order. */
   saveImages(files: File[], notePath: string, placeholder: Placeholder): void;
   /** Downloads web images that pasted text added to the note. */
@@ -31,7 +33,7 @@ export function handlePaste(evt: ClipboardEvent, editor: Editor, info: MarkdownV
   const files = imageFiles(evt.clipboardData);
   if (files.length > 0) {
     evt.preventDefault();
-    actions.saveImages(files, notePath, insertPlaceholder(editor, editor.getCursor()));
+    actions.saveImages(files, notePath, insertPlaceholder(editor, editor.getCursor(), actions.placeholder()));
     return;
   }
   // Text is pasted by Obsidian as usual; web images in it are fetched once
@@ -48,11 +50,11 @@ export function handleDrop(evt: DragEvent, editor: Editor, info: MarkdownView | 
   const files = imageFiles(evt.dataTransfer);
   if (files.length === 0) return;
   evt.preventDefault();
-  actions.saveImages(files, info.file.path, insertPlaceholder(editor, dropPosition(editor, evt)));
+  actions.saveImages(files, info.file.path, insertPlaceholder(editor, dropPosition(editor, evt), actions.placeholder()));
 }
 
-function insertPlaceholder(editor: Editor, at: ReturnType<Editor['getCursor']>): Placeholder {
-  const text = `![[Optimizing image ${Date.now().toString(36)}-${++counter}…]]`;
+function insertPlaceholder(editor: Editor, at: ReturnType<Editor['getCursor']>, label: string): Placeholder {
+  const text = `![[${label} ${Date.now().toString(36)}-${++counter}…]]`;
   editor.replaceRange(text, at);
   editor.setCursor(editor.offsetToPos(editor.posToOffset(at) + text.length));
   return { text, editor };

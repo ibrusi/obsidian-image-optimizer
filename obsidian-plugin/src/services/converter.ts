@@ -46,6 +46,7 @@ export async function convert(
   // A vector image stays sharp at any size and is usually smaller than any
   // raster of it: it is saved as it is.
   if (type === 'svg') return keep('SVG kept as is');
+  if (type === 'pdf') return keep('PDF kept as is');
   if (type === 'gif') {
     if (settings.gifMode === 'keep') return keep('GIF kept as is (settings)');
     const animated = await convertAnimatedGif(input, settings, deps, signal);

@@ -16,7 +16,7 @@ export interface RemoteContext {
   http: HttpPort;
   library: ImageLibrary;
   convert(data: ArrayBuffer, type: ImageType, signal?: AbortSignal): Promise<Converted>;
-  settings: Pick<PluginSettings, 'folder' | 'maxDownloadMB' | 'allowPrivateHosts'>;
+  settings: Pick<PluginSettings, 'folder' | 'maxDownloadMB' | 'allowPrivateHosts' | 'downloadPdf'>;
   stats: RunStats;
   signal?: AbortSignal;
   /**
@@ -37,7 +37,8 @@ export async function processRemoteImages(
   only?: ReadonlySet<string>,
 ): Promise<void> {
   const text = await ctx.vault.read(notePath);
-  const urls = new Set(findRemoteImages(text).map((i) => i.url));
+  const find = { pdf: ctx.settings.downloadPdf };
+  const urls = new Set(findRemoteImages(text, find).map((i) => i.url));
   const pageUrl = pageUrlOf(text);
   const noteDir = notePath.includes('/') ? notePath.slice(0, notePath.lastIndexOf('/')) : '/';
 
@@ -65,6 +66,7 @@ async function processOne(notePath: string, noteDir: string, url: string, pageUr
     allowPrivateHosts: ctx.settings.allowPrivateHosts,
     signal: ctx.signal,
     referer: refererFor(url, pageUrl),
+    allowPdf: ctx.settings.downloadPdf,
   });
   const saved = await saveImage(downloaded.data, downloaded.type, downloaded.url, noteDir, ctx);
   const { path, created, size } = saved;
@@ -75,8 +77,8 @@ async function processOne(notePath: string, noteDir: string, url: string, pageUr
   await ctx.vault.process(notePath, (text) => replaceImages(text, (image) => {
     if (image.url !== url) return undefined;
     rewritten++;
-    return ctx.links.embed(path, notePath, aliasOf(image));
-  }));
+    return image.link ? ctx.links.link(path, notePath, aliasOf(image)) : ctx.links.embed(path, notePath, aliasOf(image));
+  }, { pdf: ctx.settings.downloadPdf }));
 
   if (rewritten === 0) {
     // The embed was removed while the image was being processed. A reused

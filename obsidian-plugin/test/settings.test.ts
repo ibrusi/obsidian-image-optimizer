@@ -35,3 +35,10 @@ test('reuseIdentical is on by default and can be turned off', () => {
   assert.equal(normalizeSettings({ reuseIdentical: false }).reuseIdentical, false);
   assert.equal(normalizeSettings({ reuseIdentical: 'no' }).reuseIdentical, true, 'junk falls back to the default');
 });
+
+test('PDF downloads are off unless turned on', () => {
+  assert.equal(DEFAULT_SETTINGS.downloadPdf, false);
+  assert.equal(normalizeSettings({}).downloadPdf, false);
+  assert.equal(normalizeSettings({ downloadPdf: true }).downloadPdf, true);
+  assert.equal(normalizeSettings({ downloadPdf: 'yes' }).downloadPdf, false);
+});

@@ -106,6 +106,11 @@ const en = {
         'again — in another note, pasted twice, or on another device after sync — is linked to that file, even after the ' +
         'settings changed. Off: no fingerprint, every image is saved as a new file. Existing files are never changed.',
     },
+    downloadPdf: {
+      name: 'Download PDF files',
+      desc: 'Commands and paste also download PDF files that notes embed or link to (a link to a web address ending in .pdf) ' +
+        'into the image folder, as they are, and point the links at the local files. The download size limit applies.',
+    },
     limits: 'Limits',
     maxDownload: {
       name: 'Maximum download, MB',
@@ -217,6 +222,11 @@ const ru: Strings = {
         'добавленная повторно — в другой заметке, вставленная дважды или на другом устройстве после синхронизации, — ' +
         'ссылается на этот файл, даже если настройки менялись. Выкл.: без отпечатка, каждая картинка сохраняется новым ' +
         'файлом. Существующие файлы никогда не изменяются.',
+    },
+    downloadPdf: {
+      name: 'Скачивать PDF',
+      desc: 'Команды и вставка также скачивают PDF, которые заметки встраивают или на которые ссылаются (адрес оканчивается на .pdf), ' +
+        'в папку для картинок без изменений и переводят ссылки на локальные файлы. Действует ограничение размера загрузки.',
     },
     limits: 'Ограничения',
     maxDownload: {

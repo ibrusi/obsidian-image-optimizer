@@ -1,7 +1,10 @@
-// RemoteImage is an embed of a web image found in a note: a Markdown embed
-// ![alt](https://…) or an HTML <img src="https://…"> tag.
+// RemoteImage is a web file a note shows or links to: a Markdown embed
+// ![alt](https://…), an HTML <img src="https://…"> tag, or, for PDF files
+// only, a plain link [text](https://….pdf).
 export interface RemoteImage {
   kind: 'markdown' | 'html';
+  /** A plain link rather than an embed: rewritten as a link. */
+  link: boolean;
   start: number; // offset of "!" or "<"
   end: number; // offset after ")" or ">"
   alt: string;
@@ -15,9 +18,15 @@ export interface Range {
   end: number;
 }
 
+export interface FindOptions {
+  /** Also PDF files: embeds and plain links whose URL path ends in .pdf. Off: PDFs are left alone. */
+  pdf?: boolean;
+}
+
 // findRemoteImages returns the embeds of http(s) images in document order,
-// skipping code blocks, inline code and comments, where links are only text.
-export function findRemoteImages(text: string): RemoteImage[] {
+// and with options.pdf the embeds of and links to PDF files, skipping code
+// blocks, inline code and comments, where links are only text.
+export function findRemoteImages(text: string, options: FindOptions = {}): RemoteImage[] {
   const isIgnored = rangeChecker(ignoredRanges(text));
   const images: RemoteImage[] = [];
 
@@ -25,14 +34,24 @@ export function findRemoteImages(text: string): RemoteImage[] {
     if (isIgnored(i) || (i > 0 && text[i - 1] === '\\')) continue;
     const image = parseEmbed(text, i);
     if (image) {
-      if (!isWebEmbed(image.url)) images.push(image);
+      if (!isWebEmbed(image.url) && (options.pdf || !isPdfUrl(image.url))) images.push(image);
       i = image.end - 1;
+    }
+  }
+  if (options.pdf) {
+    for (let i = text.indexOf('['); i !== -1; i = text.indexOf('[', i + 1)) {
+      if (isIgnored(i) || (i > 0 && (text[i - 1] === '\\' || text[i - 1] === '!'))) continue;
+      const link = parsePdfLink(text, i);
+      if (link) {
+        images.push(link);
+        i = link.end - 1;
+      }
     }
   }
   for (const match of text.matchAll(/<img\b[^>]*>/gi)) {
     if (isIgnored(match.index)) continue;
     const image = parseImgTag(match[0], match.index);
-    if (image) images.push(image);
+    if (image && (options.pdf || !isPdfUrl(image.url))) images.push(image);
   }
 
   images.sort((a, b) => a.start - b.start);
@@ -60,10 +79,10 @@ export function isWebEmbed(url: string): boolean {
 // replaceImages rewrites embeds: replace returns the new text for an embed,
 // or undefined to keep it. Each occurrence is replaced on its own, so two
 // embeds of one URL keep their own alt text and width.
-export function replaceImages(text: string, replace: (image: RemoteImage) => string | undefined): string {
+export function replaceImages(text: string, replace: (image: RemoteImage) => string | undefined, options: FindOptions = {}): string {
   let result = '';
   let last = 0;
-  for (const image of findRemoteImages(text)) {
+  for (const image of findRemoteImages(text, options)) {
     const replacement = replace(image);
     if (replacement === undefined) continue;
     result += text.slice(last, image.start) + replacement;
@@ -75,7 +94,27 @@ export function replaceImages(text: string, replace: (image: RemoteImage) => str
 function parseEmbed(text: string, start: number): RemoteImage | null {
   const link = parseMarkdownLink(text, start);
   if (!link || !link.embed || !/^https?:\/\//i.test(link.destination)) return null;
-  return { kind: 'markdown', start, end: link.end, alt: link.text, url: link.destination };
+  return { kind: 'markdown', link: false, start, end: link.end, alt: link.text, url: link.destination };
+}
+
+// parsePdfLink parses a plain link to a web PDF. A link whose text holds an
+// embed (a clickable picture) is left alone: rewriting it would drop the
+// picture's own download.
+function parsePdfLink(text: string, start: number): RemoteImage | null {
+  const link = parseMarkdownLink(text, start);
+  if (!link || link.embed || link.text.includes('![')) return null;
+  if (!/^https?:\/\//i.test(link.destination) || !isPdfUrl(link.destination)) return null;
+  return { kind: 'markdown', link: true, start, end: link.end, alt: link.text, url: link.destination };
+}
+
+// isPdfUrl tells a link to a PDF file by the end of its path, before any
+// query or fragment: https://example.com/paper.pdf?download=1.
+export function isPdfUrl(url: string): boolean {
+  try {
+    return /\.pdf$/i.test(new URL(url).pathname);
+  } catch {
+    return false;
+  }
 }
 
 export interface MarkdownLink {
@@ -274,6 +313,7 @@ function parseImgTag(tag: string, start: number): RemoteImage | null {
   const width = attrs.get('width')?.trim();
   return {
     kind: 'html',
+    link: false,
     start,
     end: start + tag.length,
     alt: attrs.get('alt') ?? '',

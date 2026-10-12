@@ -9,6 +9,8 @@ export interface PasteActions {
   saveImages(files: File[], notePath: string, placeholder: Placeholder): void;
   /** Downloads web images that pasted text added to the note. */
   saveRemote(notePath: string, urls: Set<string>): void;
+  /** Web PDFs in pasted text are downloaded too. */
+  downloadPdf(): boolean;
 }
 
 // Placeholder marks where a pasted image goes until it is saved, so the link
@@ -40,7 +42,8 @@ export function handlePaste(evt: ClipboardEvent, editor: Editor, info: MarkdownV
   // the paste has landed in the note.
   const urls = new Set<string>();
   for (const format of ['text/plain', 'text/html']) {
-    for (const image of findRemoteImages(evt.clipboardData?.getData(format) ?? '')) urls.add(image.url);
+    const text = evt.clipboardData?.getData(format) ?? '';
+    for (const image of findRemoteImages(text, { pdf: actions.downloadPdf() })) urls.add(image.url);
   }
   if (urls.size > 0) actions.saveRemote(notePath, urls);
 }

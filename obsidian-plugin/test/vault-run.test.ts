@@ -18,7 +18,7 @@ function context(vault: MemoryVault, http: FakeHttp, signal?: AbortSignal) {
     library: memoryLibrary(vault),
     // Each image encodes to its own bytes, as different pictures do.
     convert: async (data: ArrayBuffer): Promise<Converted> => ({ data: testWebp(32, 24, 40 + new Uint8Array(data)[100]), ext: 'webp', replaced: true, detail: 'ok' }),
-    settings: { folder: 'Attachments', maxDownloadMB: 30, allowPrivateHosts: false },
+    settings: { folder: 'Attachments', maxDownloadMB: 30, allowPrivateHosts: false, downloadPdf: false },
     stats: new RunStats(),
     flush: async () => {},
     ignoredFiles: new Set<string>(),

@@ -81,6 +81,14 @@ CI (`.github/workflows/ci.yml`) запускает те же проверки, �
 
 ---
 
+## 📄 Лицензия
+
+[MIT](LICENSE) © 2026 Andrey Brusi (ibrusi).
+
+Плагин включает libwebp (BSD-3-Clause), [@jsquash/webp](https://github.com/jamsinclair/jSquash) и [wasm-feature-detect](https://github.com/GoogleChromeLabs/wasm-feature-detect) (Apache-2.0), а также [wasm-webp](https://github.com/nieyuyao/webp-wasm) (MIT); их лицензии — в [THIRD_PARTY_NOTICES.md](obsidian-plugin/THIRD_PARTY_NOTICES.md) и в каждом релизе.
+
+---
+
 ## ⚠️ Отказ от ответственности (Disclaimer)
 
 > [!WARNING]

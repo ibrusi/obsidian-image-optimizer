@@ -22,6 +22,12 @@ await esbuild.build({
   minify: production,
   sourcemap: production ? false : 'inline',
   legalComments: 'eof',
+  // The bundle carries third-party code; its licenses ship next to it.
+  banner: {
+    js: '/*! Image Optimizer, MIT License, (c) 2026 Andrey Brusi (ibrusi).\n' +
+      ' * Bundles libwebp (BSD-3-Clause), @jsquash/webp and wasm-feature-detect (Apache-2.0),\n' +
+      ' * wasm-webp (MIT): see THIRD_PARTY_NOTICES.md in the release. */',
+  },
   outfile: 'main.js',
   logLevel: 'info',
 });

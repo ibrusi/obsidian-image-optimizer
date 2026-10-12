@@ -43,6 +43,8 @@ test('every note is processed, originals are retired once at the end', async () 
   assert.deepEqual(vault.trashed, ['p.png']);
   assert.deepEqual(progress.map((p) => p.done), [0, 1, 2, 3]);
   assert.equal(ctx.stats.converted, 2);
+  const notes = ctx.stats.lines.filter((line) => line.startsWith('note: '));
+  assert.deepEqual(notes, ['note: a.md', 'note: b.md'], 'the log names each note with images before its lines');
 });
 
 test('local images are left alone when convertLocal is off', async () => {

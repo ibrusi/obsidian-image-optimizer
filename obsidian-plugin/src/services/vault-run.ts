@@ -29,6 +29,7 @@ export async function optimizeNotes(notes: string[], ctx: RemoteContext & LocalC
       const hasRemote = findRemoteImages(text).length > 0;
       const hasLocal = local !== null && findLocalLinks(text).some((link) => link.embed);
       if (!hasRemote && !hasLocal) continue;
+      ctx.stats.lines.push(`note: ${note}`);
       await ctx.flush(note);
       if (hasRemote) await processRemoteImages(note, ctx);
       if (hasLocal) await local.processNote(note);

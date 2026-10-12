@@ -95,9 +95,21 @@ test('images that are not worth converting and WebP files are left alone', async
   assert.deepEqual(vault.trashed, []);
 });
 
-test('a WebP name clash next to the original is avoided', async () => {
-  const { vault, local } = setup({ 'a.md': '![[photo.png]]', 'photo.png': PNG(), 'photo.webp': WEBP });
+test('a different WebP with the same name next to the original is avoided', async () => {
+  const other = new Uint8Array(100).fill(1).buffer;
+  const { vault, local } = setup({ 'a.md': '![[photo.png]]', 'photo.png': PNG(), 'photo.webp': other });
   await local.processNote('a.md');
   assert.equal(vault.text('a.md'), '![[photo-1.webp]]');
-  assert.equal(vault.files.get('photo.webp'), WEBP, 'the existing WebP is untouched');
+  assert.equal(vault.files.get('photo.webp'), other, 'the existing WebP is untouched');
+});
+
+test('an identical WebP already next to the original is reused, not duplicated', async () => {
+  const existing = WEBP.slice(0);
+  const { vault, local } = setup({ 'a.md': '![[photo.png]]', 'photo.png': PNG(), 'photo.webp': existing });
+  await local.processNote('a.md');
+  await local.retireOriginals();
+  assert.equal(vault.text('a.md'), '![[photo.webp]]');
+  assert.equal(vault.files.get('photo.webp'), existing);
+  assert.deepEqual([...vault.files.keys()].filter((p) => p.endsWith('.webp')), ['photo.webp']);
+  assert.deepEqual(vault.trashed, ['photo.png']);
 });

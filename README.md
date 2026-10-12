@@ -57,7 +57,7 @@ Plugin settings are stored in `.obsidian/plugins/obsidian-image-optimizer/data.j
 
 ### Good to know
 - EXIF metadata (date, GPS) is not kept in converted images; the orientation of phone photos is applied to the pixels.
-- Files are never overwritten: new files get a free name (`pic.webp`, `pic-1.webp`, …).
+- Files are never overwritten: new files get a free name (`pic.webp`, `pic-1.webp`, …). If a file of that name already holds exactly the same bytes (the same image in two notes), it is reused instead of saving a copy.
 - Links inside code blocks, inline code and comments are left alone. Notes open in an editor are saved before they are rewritten.
 - WebP files are never re-encoded, so running the plugin again does not lower quality.
 

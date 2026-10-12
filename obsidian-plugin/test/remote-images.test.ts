@@ -98,3 +98,29 @@ test('cancelling stops the run before the image in progress is written', async (
   await assert.rejects(processRemoteImages('n.md', ctx), { name: 'AbortError' });
   assert.equal(vault.text('n.md'), '![](https://x.test/a.png) ![](https://x.test/b.png)', 'aborted before the first commit');
 });
+
+test('the same image in a second note reuses the saved file', async () => {
+  const vault = new MemoryVault({ 'a.md': '![](https://x.test/a.png)', 'b.md': '![](https://x.test/a.png)' });
+  const http = new FakeHttp({ 'https://x.test/a.png': { status: 200, body: PNG } });
+  const ctx = context(vault, http);
+  await processRemoteImages('a.md', ctx);
+  await processRemoteImages('b.md', ctx);
+  assert.equal(vault.text('a.md'), '![[Attachments/a.webp]]');
+  assert.equal(vault.text('b.md'), '![[Attachments/a.webp]]');
+  assert.deepEqual([...vault.files.keys()].filter((p) => p.endsWith('.webp')), ['Attachments/a.webp']);
+  assert.match(ctx.stats.lines.join('\n'), /reused/);
+});
+
+test('a reused file is never trashed, even when the embed disappeared meanwhile', async () => {
+  const vault = new MemoryVault({ 'n.md': '![](https://x.test/a.png)', 'Attachments/a.webp': WEBP });
+  const http = new FakeHttp({ 'https://x.test/a.png': { status: 200, body: PNG } });
+  const ctx = context(vault, http, {
+    convert: async () => {
+      vault.files.set('n.md', 'the user deleted the image');
+      return { data: WEBP, ext: 'webp', replaced: true, detail: 'ok' };
+    },
+  });
+  await processRemoteImages('n.md', ctx);
+  assert.deepEqual(vault.trashed, []);
+  assert.ok(vault.files.has('Attachments/a.webp'));
+});

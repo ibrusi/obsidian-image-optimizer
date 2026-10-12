@@ -7,7 +7,7 @@ import type { Converted } from './converter.ts';
 import { download } from './downloader.ts';
 import type { HttpPort, LinkPort, VaultPort } from './ports.ts';
 import type { RunStats } from './stats.ts';
-import { saveNew } from './storage.ts';
+import { store } from './storage.ts';
 
 export interface RemoteContext {
   vault: VaultPort;
@@ -53,7 +53,7 @@ async function processOne(notePath: string, noteDir: string, url: string, ctx: R
   ctx.signal?.throwIfAborted();
 
   const folder = resolveFolder(ctx.settings.folder, noteDir);
-  const path = await saveNew(ctx.vault, folder, baseNameFromUrl(url), converted.ext, converted.data);
+  const { path, created } = await store(ctx.vault, folder, baseNameFromUrl(url), converted.ext, converted.data);
 
   let rewritten = 0;
   // process() re-reads the note: edits made during the download are kept.
@@ -64,12 +64,14 @@ async function processOne(notePath: string, noteDir: string, url: string, ctx: R
   }));
 
   if (rewritten === 0) {
-    // The embed was removed while the image was being processed.
-    await ctx.vault.trash(path);
+    // The embed was removed while the image was being processed. A reused
+    // file is not ours to remove: other notes may link to it.
+    if (created) await ctx.vault.trash(path);
     ctx.stats.skipped(url, 'the embed is no longer in the note');
     return;
   }
-  ctx.stats.saved(url, downloaded.data.byteLength, converted.data.byteLength, `→ ${path}: ${converted.detail}`);
+  ctx.stats.saved(url, downloaded.data.byteLength, converted.data.byteLength,
+    `→ ${path}${created ? '' : ' (identical file already in the vault, reused)'}: ${converted.detail}`);
 }
 
 // aliasOf keeps what the embed showed: the width of an <img>, or the alt

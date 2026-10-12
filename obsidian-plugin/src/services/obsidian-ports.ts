@@ -28,10 +28,15 @@ export class ObsidianVault implements VaultPort {
     return this.app.vault.getAbstractFileByPath(normalizePath(path)) !== null;
   }
 
-  names(folder: string): ReadonlySet<string> {
+  names(folder: string): string[] {
     const entry = folder ? this.app.vault.getAbstractFileByPath(normalizePath(folder)) : this.app.vault.getRoot();
-    if (!(entry instanceof TFolder)) return new Set();
-    return new Set(entry.children.map((child) => child.name.toLowerCase()));
+    if (!(entry instanceof TFolder)) return [];
+    return entry.children.map((child) => child.name);
+  }
+
+  size(path: string): number | null {
+    const file = this.app.vault.getAbstractFileByPath(normalizePath(path));
+    return file instanceof TFile ? file.stat.size : null;
   }
 
   async ensureFolder(folder: string): Promise<void> {

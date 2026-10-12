@@ -3,7 +3,7 @@ import { imageTypeOf, type ImageType } from '../domain/sniff.ts';
 import type { Converted } from './converter.ts';
 import type { LinkPort, MetadataPort, VaultPort } from './ports.ts';
 import type { RunStats } from './stats.ts';
-import { saveNew } from './storage.ts';
+import { store } from './storage.ts';
 
 const CONVERTIBLE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'bmp', 'gif']);
 
@@ -76,7 +76,7 @@ export class LocalImages {
     const folder = slash === -1 ? '' : original.slice(0, slash);
     const name = original.slice(slash + 1);
     const stem = name.slice(0, name.lastIndexOf('.')) || name;
-    const webp = await saveNew(vault, folder, stem, 'webp', converted.data);
+    const { path: webp, created } = await store(vault, folder, stem, 'webp', converted.data);
 
     // Every note that links to the original, the processed one included:
     // after this, no note should point at the original any more.
@@ -99,7 +99,7 @@ export class LocalImages {
 
     if (rewritten === 0) {
       // Nothing points at the original any more (edited meanwhile).
-      await vault.trash(webp);
+      if (created) await vault.trash(webp); // a reused file may be linked elsewhere
       stats.skipped(original, 'no links left to rewrite');
       return;
     }

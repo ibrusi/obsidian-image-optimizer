@@ -10,8 +10,10 @@ export interface VaultPort {
   /** Atomically rewrites a text file; fn receives the current content. */
   process(path: string, fn: (text: string) => string): Promise<string>;
   exists(path: string): boolean;
-  /** Lower-cased names of the entries of a folder ("" is the root). */
-  names(folder: string): ReadonlySet<string>;
+  /** Names of the entries of a folder ("" is the root), as stored. */
+  names(folder: string): string[];
+  /** Size in bytes of a file, or null if there is no such file. */
+  size(path: string): number | null;
   ensureFolder(folder: string): Promise<void>;
   /** Moves a file into the vault's .trash folder, where it can be restored. */
   trash(path: string): Promise<void>;

@@ -50,13 +50,19 @@ export class MemoryVault implements VaultPort {
     return [...this.files.keys(), ...this.folders].some((p) => p.toLowerCase() === lower);
   }
 
-  names(folder: string): ReadonlySet<string> {
+  names(folder: string): string[] {
     const prefix = folder ? `${folder}/` : '';
     const names = new Set<string>();
     for (const p of [...this.files.keys(), ...this.folders]) {
-      if (p && p.startsWith(prefix) && !p.slice(prefix.length).includes('/')) names.add(p.slice(prefix.length).toLowerCase());
+      if (p && p.startsWith(prefix) && !p.slice(prefix.length).includes('/')) names.add(p.slice(prefix.length));
     }
-    return names;
+    return [...names];
+  }
+
+  size(path: string): number | null {
+    const data = this.files.get(path);
+    if (data === undefined) return null;
+    return typeof data === 'string' ? new TextEncoder().encode(data).byteLength : data.byteLength;
   }
 
   async ensureFolder(folder: string): Promise<void> {

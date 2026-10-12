@@ -226,3 +226,42 @@ test('a missing .webp without an original keeps its link and reports the 404', a
   await processRemoteImages('n.md', ctx404);
   assert.ok(ctx404.stats.lines.some((line) => line.endsWith('cover.webp: HTTP 404')));
 });
+
+test('a .webp the site does not give is taken from the image folder', async () => {
+  const vault = new MemoryVault({ 'xakep/n.md': '![](https://static.x.test/img/41973/Pic1.webp)' });
+  await vault.createBinary('xakep/Attachments/pic1.webp', WEBP);
+  const http = new FakeHttp({ 'https://static.x.test/img/41973/Pic1.webp': new Error('net::ERR_BLOCKED_BY_CLIENT') });
+  const ctx = context(vault, http);
+  await processRemoteImages('xakep/n.md', ctx);
+  assert.equal(vault.text('xakep/n.md'), '![[xakep/Attachments/pic1.webp]]');
+  assert.equal(ctx.stats.failed, 0);
+  assert.ok(ctx.stats.lines.some((line) => line.includes('net::ERR_BLOCKED_BY_CLIENT; the copy in the image folder is used')));
+});
+
+test('a local copy is used only when the download fails, and only for .webp', async () => {
+  const vault = new MemoryVault({ 'n.md': '![](https://x.test/a.webp) ![](https://x.test/b.png)' });
+  await vault.createBinary('Attachments/a.webp', testWebp(8, 8));
+  await vault.createBinary('Attachments/b.png', PNG);
+  const http = new FakeHttp({ 'https://x.test/a.webp': { status: 200, body: PNG } });
+  const ctx = context(vault, http);
+  await processRemoteImages('n.md', ctx);
+  assert.equal(vault.text('n.md'), `![[Attachments/a-${await tagFor(PNG)}.webp]] ![](https://x.test/b.png)`, 'the download wins; a .png is never matched by name');
+  assert.equal(ctx.stats.failed, 1);
+});
+
+test('a request blocked with a Referer is sent again without it', async () => {
+  const vault = new MemoryVault({ 'n.md': '---\nsource: https://x.test/post\n---\n![](https://x.test/a.png)' });
+  let calls = 0;
+  const http = new FakeHttp({});
+  http.get = async (url, headers) => {
+    http.requests.push(url);
+    http.headers.push(headers);
+    if (calls++ === 0) throw new Error('net::ERR_BLOCKED_BY_CLIENT');
+    return { status: 200, body: PNG };
+  };
+  const ctx = context(vault, http);
+  await processRemoteImages('n.md', ctx);
+  assert.equal(http.headers[0]?.Referer, 'https://x.test/post');
+  assert.equal(http.headers[1]?.Referer, undefined);
+  assert.equal(ctx.stats.failed, 0);
+});

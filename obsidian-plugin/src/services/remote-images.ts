@@ -1,11 +1,11 @@
-import { resolveFolder } from '../domain/folders.ts';
+import { joinPath, resolveFolder } from '../domain/folders.ts';
 import { findRemoteImages, replaceImages, type RemoteImage } from '../domain/links.ts';
 import { baseNameFromUrl } from '../domain/names.ts';
 import { pageUrlOf, refererFor } from '../domain/request.ts';
 import type { ImageType } from '../domain/sniff.ts';
 import type { PluginSettings } from '../settings.ts';
 import type { Converted } from './converter.ts';
-import { download } from './downloader.ts';
+import { download, type Downloaded } from './downloader.ts';
 import { IDENTICAL, type ImageLibrary, REUSED } from './library.ts';
 import type { HttpPort, LinkPort, VaultPort } from './ports.ts';
 import type { RunStats } from './stats.ts';
@@ -48,15 +48,7 @@ export async function processRemoteImages(
 }
 
 async function processOne(notePath: string, noteDir: string, url: string, pageUrl: string | null, ctx: RemoteContext): Promise<void> {
-  const downloaded = await download(ctx.http, url, {
-    maxBytes: ctx.settings.maxDownloadMB * 1024 * 1024,
-    allowPrivateHosts: ctx.settings.allowPrivateHosts,
-    signal: ctx.signal,
-    referer: refererFor(url, pageUrl),
-  });
-  const saved = await saveImage(downloaded.data, downloaded.type, downloaded.url, noteDir, ctx);
-  const { path, created, size } = saved;
-  const detail = downloaded.url === url ? saved.detail : `from ${downloaded.url}, ${saved.detail}`;
+  const { path, created, before, size, detail } = await fetchImage(url, noteDir, pageUrl, ctx);
 
   let rewritten = 0;
   // process() re-reads the note: edits made during the download are kept.
@@ -73,7 +65,55 @@ async function processOne(notePath: string, noteDir: string, url: string, pageUr
     ctx.stats.skipped(url, 'the embed is no longer in the note');
     return;
   }
-  ctx.stats.saved(url, downloaded.data.byteLength, size, `→ ${path}: ${detail}`);
+  ctx.stats.saved(url, before, size, `→ ${path}: ${detail}`);
+}
+
+interface Fetched extends Saved {
+  /** Size of the image as it came, before conversion. */
+  before: number;
+}
+
+// fetchImage downloads the image and saves it, or, when the site does not
+// give it, uses the copy already in the image folder.
+async function fetchImage(url: string, noteDir: string, pageUrl: string | null, ctx: RemoteContext): Promise<Fetched> {
+  let downloaded: Downloaded;
+  try {
+    downloaded = await download(ctx.http, url, {
+      maxBytes: ctx.settings.maxDownloadMB * 1024 * 1024,
+      allowPrivateHosts: ctx.settings.allowPrivateHosts,
+      signal: ctx.signal,
+      referer: refererFor(url, pageUrl),
+    });
+  } catch (error) {
+    if (ctx.signal?.aborted) throw error;
+    const local = localCopyOf(url, resolveFolder(ctx.settings.folder, noteDir), ctx.vault);
+    if (!local) throw error;
+    const size = ctx.vault.size(local) ?? 0;
+    const reason = error instanceof Error ? error.message : String(error);
+    return { path: local, created: false, before: size, size, detail: `${reason}; the copy in the image folder is used` };
+  }
+  const saved = await saveImage(downloaded.data, downloaded.type, downloaded.url, noteDir, ctx);
+  const detail = downloaded.url === url ? saved.detail : `from ${downloaded.url}, ${saved.detail}`;
+  return { ...saved, before: downloaded.data.byteLength, detail };
+}
+
+// localCopyOf finds a WebP the site no longer gives in the note's image
+// folder, saved there under the name from its URL (by a web clipper or an
+// earlier tool): "…/pic1.webp" → "<folder>/pic1.webp". Names are compared
+// case-insensitively, like the file systems of phones and Windows do.
+function localCopyOf(url: string, folder: string, vault: VaultPort): string | null {
+  let pathname: string;
+  try {
+    pathname = new URL(url).pathname;
+  } catch {
+    return null;
+  }
+  if (!/\.webp$/i.test(pathname)) return null;
+  const wanted = `${baseNameFromUrl(url)}.webp`.toLowerCase();
+  const name = vault.names(folder).find((n) => n.toLowerCase() === wanted);
+  if (!name) return null;
+  const path = joinPath(folder, name);
+  return vault.size(path) === null ? null : path;
 }
 
 interface Saved {

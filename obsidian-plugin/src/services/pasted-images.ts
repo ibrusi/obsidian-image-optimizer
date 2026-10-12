@@ -1,6 +1,6 @@
 import { resolveFolder } from '../domain/folders.ts';
 import { pastedImageStem } from '../domain/names.ts';
-import { extensionOf, imageTypeOf, type ImageType } from '../domain/sniff.ts';
+import { extensionOf, imageTypeOf, SNIFF_BYTES, type ImageType } from '../domain/sniff.ts';
 import type { PluginSettings } from '../settings.ts';
 import type { Converted } from './converter.ts';
 import { IDENTICAL, type ImageLibrary, REUSED } from './library.ts';
@@ -26,7 +26,7 @@ export async function savePastedImage(
   ctx: PasteContext,
   now = new Date(),
 ): Promise<string | null> {
-  const type = imageTypeOf(new Uint8Array(data, 0, Math.min(data.byteLength, 16)));
+  const type = imageTypeOf(new Uint8Array(data, 0, Math.min(data.byteLength, SNIFF_BYTES)));
   if (!type) return null;
   const label = fileName || 'pasted image';
 

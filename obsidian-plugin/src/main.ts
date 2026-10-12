@@ -237,6 +237,7 @@ export default class ImageOptimizerPlugin extends Plugin {
       stats: run.stats,
       flush: (path) => this.flushEditors(path),
       ignoredFiles: new Set([LOG_PATH]),
+      failedUrls: new Map(),
       signal,
     };
   }

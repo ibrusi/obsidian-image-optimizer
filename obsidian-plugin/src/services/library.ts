@@ -1,5 +1,5 @@
 import { dimensionsOf } from '../domain/dimensions.ts';
-import { imageTypeOf, type ImageType } from '../domain/sniff.ts';
+import { imageTypeOf, SNIFF_BYTES, type ImageType } from '../domain/sniff.ts';
 import { tagOf, tagOfFingerprint, withTag } from '../domain/source-tag.ts';
 import type { VaultPort } from './ports.ts';
 import { sameBytes, type Stored, store } from './storage.ts';
@@ -60,7 +60,7 @@ export class ImageLibrary {
     } catch {
       return false;
     }
-    const found = imageTypeOf(new Uint8Array(data, 0, Math.min(data.byteLength, 16)));
+    const found = imageTypeOf(new Uint8Array(data, 0, Math.min(data.byteLength, SNIFF_BYTES)));
     if (found === type) return sameBytes(data, original);
     if (found !== 'webp') return false;
     const want = dimensionsOf(new Uint8Array(original), type);

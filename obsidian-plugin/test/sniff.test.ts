@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { imageTypeOf, isConvertible } from '../src/domain/sniff.ts';
+import { extensionOf, imageTypeOf, isConvertible } from '../src/domain/sniff.ts';
 
 const pad = (head: number[] | string) => {
   const bytes = typeof head === 'string' ? Array.from(head, (c) => c.charCodeAt(0)) : head;
@@ -21,4 +21,15 @@ test('only still raster formats are converted', () => {
   assert.equal(isConvertible('jpeg'), true);
   assert.equal(isConvertible('gif'), false);
   assert.equal(isConvertible('webp'), false);
+});
+
+test('SVG is recognized by its root element, HTML is not', () => {
+  const bytes = (text: string) => new TextEncoder().encode(text);
+  assert.equal(imageTypeOf(bytes('<svg xmlns="http://www.w3.org/2000/svg" width="10"/>')), 'svg');
+  assert.equal(imageTypeOf(bytes('﻿<?xml version="1.0" encoding="UTF-8"?>\n<!-- made by hand -->\n<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "x">\n<svg>')), 'svg');
+  assert.equal(imageTypeOf(bytes('  <SVG viewBox="0 0 1 1">')), 'svg');
+  assert.equal(imageTypeOf(bytes('<!doctype html><html><body><svg></svg></body></html>')), null);
+  assert.equal(imageTypeOf(bytes('<?xml version="1.0"?><Error><Code>AccessDenied</Code></Error>')), null);
+  assert.equal(imageTypeOf(bytes('<svgfoo>')), null);
+  assert.equal(extensionOf('svg'), 'svg');
 });

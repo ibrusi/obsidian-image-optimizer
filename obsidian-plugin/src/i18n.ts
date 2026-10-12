@@ -95,8 +95,8 @@ const en = {
     },
     reuseIdentical: {
       name: 'Reuse identical files',
-      desc: 'If a file of the same name (pic.webp, pic-1.webp, …) in the target folder holds exactly the same bytes, ' +
-        'link to it instead of saving a copy. Existing files are never changed.',
+      desc: 'An image added again — the same link in another note, the same picture pasted twice — is linked to the file ' +
+        'saved the first time, even after the quality or other settings changed. Existing files are never changed.',
     },
     limits: 'Limits',
     maxDownload: {
@@ -198,8 +198,9 @@ const ru: Strings = {
     },
     reuseIdentical: {
       name: 'Не сохранять одинаковые файлы',
-      desc: 'Если в папке уже есть файл с таким же именем (pic.webp, pic-1.webp, …) и точно такими же байтами, ' +
-        'ссылка ставится на него, а копия не сохраняется. Существующие файлы никогда не изменяются.',
+      desc: 'Картинка, добавленная повторно — та же ссылка в другой заметке, та же картинка, вставленная дважды, — ' +
+        'ссылается на файл, сохранённый в первый раз, даже если качество или другие настройки с тех пор менялись. ' +
+        'Существующие файлы никогда не изменяются.',
     },
     limits: 'Ограничения',
     maxDownload: {

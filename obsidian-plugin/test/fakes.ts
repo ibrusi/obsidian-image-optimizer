@@ -1,5 +1,7 @@
 import { findLocalLinks } from '../src/domain/local-links.ts';
+import { ImageLibrary } from '../src/services/library.ts';
 import type { HttpPort, HttpResponse, LinkPort, MetadataPort, VaultPort } from '../src/services/ports.ts';
+import { type IndexStorage, SourceIndex } from '../src/services/source-index.ts';
 
 // MemoryVault is an in-memory VaultPort with the same no-clobber and
 // case-insensitive name semantics as a real vault on desktop and mobile.
@@ -137,4 +139,21 @@ function normalize(path: string): string {
     else if (part && part !== '.') parts.push(part);
   }
   return parts.join('/');
+}
+
+// MemoryStorage keeps saved data as a JSON round trip, like a file would.
+export class MemoryStorage implements IndexStorage {
+  data: unknown = null;
+
+  async load(): Promise<unknown> {
+    return this.data;
+  }
+
+  async save(data: unknown): Promise<void> {
+    this.data = JSON.parse(JSON.stringify(data));
+  }
+}
+
+export function memoryLibrary(vault: VaultPort, reuse = true, index = SourceIndex.empty(new MemoryStorage())): ImageLibrary {
+  return new ImageLibrary(vault, index, reuse);
 }

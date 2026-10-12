@@ -47,7 +47,7 @@ With **Convert on paste and drop** enabled (default), pasted and dropped images 
 | GIF | Convert to WebP | Or keep GIFs as they are. |
 | Convert images already in the vault | on | Commands also convert local JPG/PNG/BMP/GIF and move the originals to `.trash`. |
 | Convert on paste and drop | on | See above. |
-| Reuse identical files | on | If a file of the same name in the target folder (`pic.webp`, `pic-1.webp`, …) holds exactly the same bytes, link to it instead of saving a copy. Off: every image is saved as a new file. |
+| Reuse identical files | on | An image added again (the same link in another note, the same picture pasted twice, a copy of a local image) is linked to the file saved the first time instead of being saved and encoded again, even after the settings changed. Off: every image is saved as a new file. |
 | Maximum download, MB | `30` | Larger downloads are refused. |
 | Maximum image size, megapixels | `50` | Larger images are kept as they are (for animations: width × height × frames), to protect memory on phones. |
 | Allow private network addresses | off | By default links to `localhost`, `*.local` and private, loopback and link-local IP addresses are refused, so a note from an untrusted source cannot probe your network. |
@@ -57,7 +57,7 @@ Plugin settings are stored in `.obsidian/plugins/obsidian-image-optimizer/data.j
 
 ### Good to know
 - EXIF metadata (date, GPS) is not kept in converted images; the orientation of phone photos is applied to the pixels.
-- Files are never overwritten: new files get a free name (`pic.webp`, `pic-1.webp`, …). If a file of that name already holds exactly the same bytes (the same image in two notes), it is reused instead of saving a copy (setting *Reuse identical files*).
+- Files are never overwritten: new files get a free name (`pic.webp`, `pic-1.webp`, …). The same image added again is linked to the file saved the first time instead of being saved again (setting *Reuse identical files*): the plugin keeps a fingerprint (SHA-256) of every original it saved in `sources.json` in its folder, and also reuses a file of the same name with exactly the same bytes.
 - Links inside code blocks, inline code and comments are left alone. Notes open in an editor are saved before they are rewritten.
 - WebP files are never re-encoded, so running the plugin again does not lower quality.
 

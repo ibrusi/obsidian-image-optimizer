@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import type { Converted } from '../src/services/converter.ts';
 import { LocalImages, type LocalContext } from '../src/services/local-images.ts';
 import { RunStats } from '../src/services/stats.ts';
-import { FakeLinks, FakeMetadata, MemoryVault } from './fakes.ts';
+import { FakeLinks, FakeMetadata, memoryLibrary, MemoryVault } from './fakes.ts';
 
 const PNG = () => Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Array(992).fill(7)]).buffer;
 const WEBP = new Uint8Array(100).buffer;
@@ -16,7 +16,7 @@ function setup(files: Record<string, ArrayBuffer | string>, overrides: Partial<L
     links: new FakeLinks(),
     metadata: new FakeMetadata(vault),
     convert: async (): Promise<Converted> => ({ data: WEBP, ext: 'webp', replaced: true, detail: 'ok' }),
-    settings: { reuseIdentical: true },
+    library: memoryLibrary(vault),
     stats: new RunStats(),
     flush: async (path) => { flushed.push(path); },
     ignoredFiles: new Set(['image-optimizer-log.md']),
@@ -113,4 +113,32 @@ test('an identical WebP already next to the original is reused, not duplicated',
   assert.equal(vault.files.get('photo.webp'), existing);
   assert.deepEqual([...vault.files.keys()].filter((p) => p.endsWith('.webp')), ['photo.webp']);
   assert.deepEqual(vault.trashed, ['photo.png']);
+});
+
+test('a copy of an image converted before reuses its WebP', async () => {
+  const { vault, ctx, local } = setup({
+    'a.md': '![[one/photo.png]]',
+    'b.md': '![[two/copy.png]]',
+    'one/photo.png': PNG(),
+    'two/copy.png': PNG(),
+  });
+  let encodes = 0;
+  ctx.convert = async () => ({ data: new Uint8Array(100 + ++encodes).buffer, ext: 'webp', replaced: true, detail: 'ok' });
+  await local.processNote('a.md');
+  await local.processNote('b.md');
+  assert.equal(vault.text('b.md'), '![[one/photo.webp]]');
+  assert.equal(encodes, 1);
+  assert.ok(!vault.files.has('two/copy.webp'));
+});
+
+test('an index entry pointing at the original itself is not reused', async () => {
+  const { vault, ctx, local } = setup({ 'a.md': '![[photo.png]]', 'photo.png': PNG() });
+  // The image was pasted earlier and kept unconverted: the index maps it to photo.png.
+  const pasted = await ctx.library.find(PNG());
+  await ctx.library.save(pasted.key, '', 'photo', 'png', PNG());
+  assert.equal((await ctx.library.find(PNG())).path, 'photo.png');
+
+  await local.processNote('a.md');
+  assert.equal(vault.text('a.md'), '![[photo.webp]]');
+  assert.ok(vault.files.has('photo.png'), 'the original is only retired at the end of a run');
 });

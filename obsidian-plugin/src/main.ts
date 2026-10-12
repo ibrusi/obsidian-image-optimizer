@@ -6,10 +6,12 @@ import { resolveLanguage, type Strings, stringsFor } from './i18n.ts';
 import { LOG_PATH, RunLog } from './log.ts';
 import { convert, type ConvertDeps } from './services/converter.ts';
 import { JobQueue } from './services/job-queue.ts';
+import { ImageLibrary } from './services/library.ts';
 import type { LocalContext } from './services/local-images.ts';
-import { ObsidianHttp, ObsidianLinks, ObsidianMetadata, ObsidianVault } from './services/obsidian-ports.ts';
+import { JsonFileStorage, ObsidianHttp, ObsidianLinks, ObsidianMetadata, ObsidianVault } from './services/obsidian-ports.ts';
 import { savePastedImage } from './services/pasted-images.ts';
 import { processRemoteImages, type RemoteContext } from './services/remote-images.ts';
+import { SourceIndex } from './services/source-index.ts';
 import { RunStats } from './services/stats.ts';
 import { optimizeNotes } from './services/vault-run.ts';
 import { DEFAULT_SETTINGS, normalizeSettings, type PluginSettings } from './settings.ts';
@@ -32,11 +34,19 @@ export default class ImageOptimizerPlugin extends Plugin {
   private codec: Promise<Codec> | null = null;
   private codecFallback: string | null = null;
   private readonly queue = new JobQueue();
+  private sourceIndex: SourceIndex | null = null;
 
   async onload(): Promise<void> {
     this.settings = normalizeSettings(await this.loadData());
     this.strings = stringsFor(resolveLanguage(this.settings.language, appLanguage()));
     this.addSettingTab(new ImageOptimizerSettingTab(this.app, this));
+
+    // The source index lives in the plugin's folder, next to its settings.
+    const pluginDir = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
+    const index = await SourceIndex.open(new JsonFileStorage(this.app, `${pluginDir}/sources.json`));
+    this.sourceIndex = index;
+    this.registerEvent(this.app.vault.on('rename', (file, oldPath) => index.renamed(oldPath, file.path)));
+    this.registerEvent(this.app.vault.on('delete', (file) => index.removed(file.path)));
 
     this.command('optimizeNote', {
       id: 'optimize-note',
@@ -66,6 +76,7 @@ export default class ImageOptimizerPlugin extends Plugin {
 
   onunload(): void {
     this.queue.cancelAll();
+    void this.saveIndex();
     void this.codec?.then((codec) => codec.dispose());
   }
 
@@ -188,11 +199,21 @@ export default class ImageOptimizerPlugin extends Plugin {
   // report shows the outcome of a run. message overrides the summary; null
   // keeps quiet unless something failed (pastes should not chatter).
   private async report(run: Run, title: string, message?: string | null): Promise<void> {
+    await this.saveIndex();
     for (const line of run.stats.lines) run.log.add(line);
     if (this.settings.writeLogNote) await run.log.flush(title);
     if (message === null && run.stats.failed === 0) return;
     const details = this.settings.writeLogNote ? this.strings.notices.details(LOG_PATH) : '';
     new Notice((message ?? run.stats.summary(this.strings)) + details, 10_000);
+  }
+
+  private async saveIndex(): Promise<void> {
+    try {
+      await this.sourceIndex?.save();
+    } catch (error) {
+      // Only reuse across sessions is lost: the files themselves are saved.
+      console.error('[image-optimizer] saving the source index failed', error);
+    }
   }
 
   private async context(run: Run, signal?: AbortSignal): Promise<RunContext> {
@@ -204,8 +225,11 @@ export default class ImageOptimizerPlugin extends Plugin {
       encodeAnimation: (animation, options, s) => codec.encodeAnimation(animation, options, s),
     };
     const settings = this.settings;
+    const vault = new ObsidianVault(this.app);
+    if (!this.sourceIndex) throw new Error('the plugin is not loaded');
     return {
-      vault: new ObsidianVault(this.app),
+      vault,
+      library: new ImageLibrary(vault, this.sourceIndex, settings.reuseIdentical),
       links: new ObsidianLinks(this.app),
       metadata: new ObsidianMetadata(this.app),
       http: new ObsidianHttp(),

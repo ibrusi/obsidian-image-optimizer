@@ -4,7 +4,7 @@ import type { ImageType } from '../src/domain/sniff.ts';
 import type { Converted } from '../src/services/converter.ts';
 import { processRemoteImages, type RemoteContext } from '../src/services/remote-images.ts';
 import { RunStats } from '../src/services/stats.ts';
-import { FakeHttp, FakeLinks, MemoryVault } from './fakes.ts';
+import { FakeHttp, FakeLinks, memoryLibrary, MemoryVault } from './fakes.ts';
 
 const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Array(992).fill(1)]).buffer;
 const HTML = new TextEncoder().encode('<!doctype html><title>Hotlinking denied</title>').buffer as ArrayBuffer;
@@ -15,8 +15,9 @@ function context(vault: MemoryVault, http: FakeHttp, overrides: Partial<RemoteCo
     vault,
     links: new FakeLinks(),
     http,
+    library: memoryLibrary(vault),
     convert: async (_data: ArrayBuffer, _type: ImageType): Promise<Converted> => ({ data: WEBP, ext: 'webp', replaced: true, detail: 'ok' }),
-    settings: { folder: 'Attachments', maxDownloadMB: 30, allowPrivateHosts: false, reuseIdentical: true },
+    settings: { folder: 'Attachments', maxDownloadMB: 30, allowPrivateHosts: false },
     stats: new RunStats(),
     ...overrides,
   };
@@ -123,4 +124,29 @@ test('a reused file is never trashed, even when the embed disappeared meanwhile'
   await processRemoteImages('n.md', ctx);
   assert.deepEqual(vault.trashed, []);
   assert.ok(vault.files.has('Attachments/a.webp'));
+});
+
+test('the same image added again after the encoding changed reuses the first file, without encoding', async () => {
+  const vault = new MemoryVault({ 'a.md': '![](https://x.test/a.png)', 'b.md': '![](https://x.test/a.png)' });
+  const http = new FakeHttp({ 'https://x.test/a.png': { status: 200, body: PNG } });
+  const library = memoryLibrary(vault);
+  let encodes = 0;
+  // Each encoding gives different bytes, as after a change of settings.
+  const convert = async (): Promise<Converted> => ({ data: new Uint8Array(50 + ++encodes).buffer, ext: 'webp', replaced: true, detail: 'ok' });
+  await processRemoteImages('a.md', context(vault, http, { library, convert }));
+  const ctx = context(vault, http, { library, convert });
+  await processRemoteImages('b.md', ctx);
+  assert.equal(vault.text('b.md'), '![[Attachments/a.webp]]');
+  assert.equal(encodes, 1);
+  assert.deepEqual([...vault.files.keys()].filter((p) => p.endsWith('.webp')), ['Attachments/a.webp']);
+  assert.match(ctx.stats.lines.join('\n'), /already in the vault, reused/);
+});
+
+test('with reuse off the same image is saved again', async () => {
+  const vault = new MemoryVault({ 'a.md': '![](https://x.test/a.png)', 'b.md': '![](https://x.test/a.png)' });
+  const http = new FakeHttp({ 'https://x.test/a.png': { status: 200, body: PNG } });
+  const library = memoryLibrary(vault, false);
+  await processRemoteImages('a.md', context(vault, http, { library }));
+  await processRemoteImages('b.md', context(vault, http, { library }));
+  assert.equal(vault.text('b.md'), '![[Attachments/a-1.webp]]');
 });

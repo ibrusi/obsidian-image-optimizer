@@ -3,9 +3,9 @@ import { test } from 'node:test';
 import type { Converted } from '../src/services/converter.ts';
 import { RunStats } from '../src/services/stats.ts';
 import { optimizeNotes, type Progress } from '../src/services/vault-run.ts';
-import { FakeHttp, FakeLinks, FakeMetadata, MemoryVault } from './fakes.ts';
+import { FakeHttp, FakeLinks, FakeMetadata, memoryLibrary, MemoryVault } from './fakes.ts';
 
-const PNG = () => Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Array(992).fill(3)]).buffer;
+const PNG = (fill = 3) => Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Array(992).fill(fill)]).buffer;
 const WEBP = new Uint8Array(10).buffer;
 
 function context(vault: MemoryVault, http: FakeHttp, signal?: AbortSignal) {
@@ -14,8 +14,9 @@ function context(vault: MemoryVault, http: FakeHttp, signal?: AbortSignal) {
     links: new FakeLinks(),
     metadata: new FakeMetadata(vault),
     http,
+    library: memoryLibrary(vault),
     convert: async (): Promise<Converted> => ({ data: WEBP, ext: 'webp', replaced: true, detail: 'ok' }),
-    settings: { folder: 'Attachments', maxDownloadMB: 30, allowPrivateHosts: false, reuseIdentical: true },
+    settings: { folder: 'Attachments', maxDownloadMB: 30, allowPrivateHosts: false },
     stats: new RunStats(),
     flush: async () => {},
     ignoredFiles: new Set<string>(),
@@ -28,7 +29,7 @@ test('every note is processed, originals are retired once at the end', async () 
     'a.md': '![](https://x.test/a.png)',
     'b.md': '![[p.png]]',
     'c.md': 'no images',
-    'p.png': PNG(),
+    'p.png': PNG(4), // another image than a.png
   });
   const http = new FakeHttp({ 'https://x.test/a.png': { status: 200, body: PNG() } });
   const progress: Progress[] = [];

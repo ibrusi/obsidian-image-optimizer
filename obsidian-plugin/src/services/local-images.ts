@@ -1,10 +1,9 @@
 import { findLocalLinks, replaceLocalLinks, type LocalLink } from '../domain/local-links.ts';
 import { imageTypeOf, type ImageType } from '../domain/sniff.ts';
-import type { PluginSettings } from '../settings.ts';
 import type { Converted } from './converter.ts';
+import { IDENTICAL, type ImageLibrary, REUSED } from './library.ts';
 import type { LinkPort, MetadataPort, VaultPort } from './ports.ts';
 import type { RunStats } from './stats.ts';
-import { store } from './storage.ts';
 
 const CONVERTIBLE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'bmp', 'gif']);
 
@@ -12,8 +11,8 @@ export interface LocalContext {
   vault: VaultPort;
   links: LinkPort;
   metadata: MetadataPort;
+  library: ImageLibrary;
   convert(data: ArrayBuffer, type: ImageType, signal?: AbortSignal): Promise<Converted>;
-  settings: Pick<PluginSettings, 'reuseIdentical'>;
   stats: RunStats;
   /** Saves open editors of a note before the plugin rewrites it on disk. */
   flush(notePath: string): Promise<void>;
@@ -60,25 +59,17 @@ export class LocalImages {
   }
 
   private async processImage(original: string, notePath: string): Promise<void> {
-    const { vault, metadata, stats, signal } = this.ctx;
+    const { vault, metadata, stats } = this.ctx;
     const data = await vault.readBinary(original);
     const type = imageTypeOf(new Uint8Array(data, 0, Math.min(data.byteLength, 16)));
     if (!type) {
       stats.skipped(original, 'not a readable image');
       return;
     }
-    const converted = await this.ctx.convert(data, type, signal);
-    if (!converted.replaced) {
-      stats.skipped(original, converted.detail);
-      return;
-    }
-    signal?.throwIfAborted();
-
-    const slash = original.lastIndexOf('/');
-    const folder = slash === -1 ? '' : original.slice(0, slash);
-    const name = original.slice(slash + 1);
-    const stem = name.slice(0, name.lastIndexOf('.')) || name;
-    const { path: webp, created } = await store(vault, folder, stem, 'webp', converted.data, this.ctx.settings.reuseIdentical);
+    const name = original.slice(original.lastIndexOf('/') + 1);
+    const result = await this.webpFor(original, data, type);
+    if (!result) return;
+    const { path: webp, created } = result;
 
     // Every note that links to the original, the processed one included:
     // after this, no note should point at the original any more.
@@ -105,9 +96,33 @@ export class LocalImages {
       stats.skipped(original, 'no links left to rewrite');
       return;
     }
-    stats.saved(original, data.byteLength, converted.data.byteLength, `→ ${webp}: ${converted.detail}`);
+    stats.saved(original, data.byteLength, result.size, `→ ${webp}: ${result.detail}`);
     if (complete) this.replaced.set(original, webp);
     else stats.lines.push(`${original}: kept, not every note could be updated`);
+  }
+
+  // webpFor returns the WebP that replaces original: one already in the
+  // vault for the same image, or a new one written next to the original.
+  // Returns null, after logging why, when converting is not worth it.
+  private async webpFor(original: string, data: ArrayBuffer, type: ImageType): Promise<WebpFile | null> {
+    const { vault, library, stats, signal } = this.ctx;
+    // Only a WebP replaces the original: the index may point at the
+    // original itself, or at an unconverted copy of it.
+    const found = await library.find(data, (path) => path !== original && extension(path) === 'webp');
+    if (found.path) return { path: found.path, created: false, size: vault.size(found.path) ?? data.byteLength, detail: REUSED };
+
+    const converted = await this.ctx.convert(data, type, signal);
+    if (!converted.replaced) {
+      stats.skipped(original, converted.detail);
+      return null;
+    }
+    signal?.throwIfAborted();
+    const slash = original.lastIndexOf('/');
+    const folder = slash === -1 ? '' : original.slice(0, slash);
+    const name = original.slice(slash + 1);
+    const stem = name.slice(0, name.lastIndexOf('.')) || name;
+    const stored = await library.save(found.key, folder, stem, 'webp', converted.data);
+    return { ...stored, size: converted.data.byteLength, detail: stored.created ? converted.detail : IDENTICAL };
   }
 
   // retarget returns the new text of a link to original, or undefined for
@@ -166,6 +181,14 @@ export class LocalImages {
     }
     return found;
   }
+}
+
+interface WebpFile {
+  path: string;
+  /** False for a file that was already in the vault. */
+  created: boolean;
+  size: number;
+  detail: string;
 }
 
 function extension(path: string): string {

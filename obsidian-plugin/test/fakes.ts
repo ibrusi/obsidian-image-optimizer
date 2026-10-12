@@ -121,14 +121,16 @@ export class FakeMetadata implements MetadataPort {
 
 export class FakeHttp implements HttpPort {
   readonly requests: string[] = [];
+  readonly headers: Array<Record<string, string> | undefined> = [];
   private readonly routes: Record<string, HttpResponse | Error>;
 
   constructor(routes: Record<string, HttpResponse | Error>) {
     this.routes = routes;
   }
 
-  async get(url: string): Promise<HttpResponse> {
+  async get(url: string, headers?: Record<string, string>): Promise<HttpResponse> {
     this.requests.push(url);
+    this.headers.push(headers);
     const route = this.routes[url];
     if (route === undefined) return { status: 404, body: new ArrayBuffer(0) };
     if (route instanceof Error) throw route;

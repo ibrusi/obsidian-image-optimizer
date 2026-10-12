@@ -20,10 +20,10 @@
 ### Установка
 Пока плагина нет в каталоге сообщества, установите его через **BRAT**:
 1. Установите и включите плагин сообщества **BRAT**.
-2. Выполните **BRAT: Add a beta plugin for testing**, введите `ibrusi/obsidian-local-image-small` и выберите последнюю версию.
+2. Выполните **BRAT: Add a beta plugin for testing**, введите `ibrusi/obsidian-image-optimizer` и выберите последнюю версию.
 3. Включите **Image Optimizer** в *Настройки → Сторонние плагины*.
 
-Вручную: скачайте `obsidian-image-optimizer.zip` из [последнего релиза](https://github.com/ibrusi/obsidian-local-image-small/releases), распакуйте в `<хранилище>/.obsidian/plugins/` (папка `.obsidian` скрытая) и включите плагин.
+Вручную: скачайте `obsidian-image-optimizer.zip` из [последнего релиза](https://github.com/ibrusi/obsidian-image-optimizer/releases), распакуйте в `<хранилище>/.obsidian/plugins/` (папка `.obsidian` скрытая) и включите плагин.
 
 ### Использование
 Откройте палитру команд (`Ctrl/Cmd+P` на компьютере; на телефоне — свайп вниз по заметке или через меню) и наберите **image**:

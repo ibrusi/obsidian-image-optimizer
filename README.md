@@ -20,10 +20,10 @@ It is an **Obsidian plugin** (`obsidian-plugin/`) that works on **Windows, macOS
 ### Installation
 Until the plugin is in the community catalogue, install it with **BRAT**:
 1. Install and enable the community plugin **BRAT**.
-2. Run **BRAT: Add a beta plugin for testing**, enter `ibrusi/obsidian-local-image-small` and pick the latest version.
+2. Run **BRAT: Add a beta plugin for testing**, enter `ibrusi/obsidian-image-optimizer` and pick the latest version.
 3. Enable **Image Optimizer** in *Settings → Community plugins*.
 
-Manual installation: download `obsidian-image-optimizer.zip` from the [latest release](https://github.com/ibrusi/obsidian-local-image-small/releases), unpack it into `<vault>/.obsidian/plugins/` (the `.obsidian` folder is hidden) and enable the plugin.
+Manual installation: download `obsidian-image-optimizer.zip` from the [latest release](https://github.com/ibrusi/obsidian-image-optimizer/releases), unpack it into `<vault>/.obsidian/plugins/` (the `.obsidian` folder is hidden) and enable the plugin.
 
 ### Usage
 Open the command palette (`Ctrl/Cmd+P` on a computer; on a phone swipe down in a note or use the menu) and type **image**:

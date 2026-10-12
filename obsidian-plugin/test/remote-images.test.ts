@@ -226,3 +226,29 @@ test('a missing .webp without an original keeps its link and reports the 404', a
   await processRemoteImages('n.md', ctx404);
   assert.ok(ctx404.stats.lines.some((line) => line.endsWith('cover.webp: HTTP 404')));
 });
+
+test('a request blocked with a Referer is sent again without it', async () => {
+  const vault = new MemoryVault({ 'n.md': '---\nsource: https://x.test/post\n---\n![](https://x.test/a.png)' });
+  let calls = 0;
+  const http = new FakeHttp({});
+  http.get = async (url, headers) => {
+    http.requests.push(url);
+    http.headers.push(headers);
+    if (calls++ === 0) throw new Error('net::ERR_BLOCKED_BY_CLIENT');
+    return { status: 200, body: PNG };
+  };
+  const ctx = context(vault, http);
+  await processRemoteImages('n.md', ctx);
+  assert.equal(http.headers[0]?.Referer, 'https://x.test/post');
+  assert.equal(http.headers[1]?.Referer, undefined);
+  assert.equal(ctx.stats.failed, 0);
+});
+
+test('a .webp the site does not give is never replaced by a local file with the same name', async () => {
+  const vault = new MemoryVault({ 'n.md': '![](https://x.test/pic1.webp)' });
+  await vault.createBinary('Attachments/pic1.webp', WEBP);
+  const ctx = context(vault, new FakeHttp({ 'https://x.test/pic1.webp': { status: 403, body: new ArrayBuffer(0) } }));
+  await processRemoteImages('n.md', ctx);
+  assert.equal(vault.text('n.md'), '![](https://x.test/pic1.webp)');
+  assert.equal(ctx.stats.failed, 1);
+});

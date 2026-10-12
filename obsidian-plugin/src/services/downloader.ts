@@ -56,9 +56,7 @@ async function downloadOne(http: HttpPort, url: string, options: DownloadOptions
   if (blocked) throw new Error(`refused: ${blocked}`);
   options.signal?.throwIfAborted();
 
-  const headers: Record<string, string> = { Accept: IMAGE_ACCEPT };
-  if (options.referer) headers.Referer = options.referer;
-  const response = await withTimeout(http.get(url, headers), options.timeoutMs ?? DOWNLOAD_TIMEOUT_MS, options.signal);
+  const response = await request(http, url, options);
   if (response.status < 200 || response.status >= 300) throw new HttpError(response.status);
   const data = response.body;
   if (data.byteLength > options.maxBytes) {
@@ -69,12 +67,33 @@ async function downloadOne(http: HttpPort, url: string, options: DownloadOptions
   return { data, type, url };
 }
 
+// request sends the browser's headers. If the request fails without an
+// answer (Obsidian on desktop answers net::ERR_BLOCKED_BY_CLIENT to some
+// requests carrying a Referer), it is sent once more without the Referer.
+async function request(http: HttpPort, url: string, options: DownloadOptions) {
+  const send = (headers: Record<string, string>) =>
+    withTimeout(http.get(url, headers), options.timeoutMs ?? DOWNLOAD_TIMEOUT_MS, options.signal);
+  if (!options.referer) return send({ Accept: IMAGE_ACCEPT });
+  try {
+    return await send({ Accept: IMAGE_ACCEPT, Referer: options.referer });
+  } catch (error) {
+    if (options.signal?.aborted || isTimeout(error)) throw error;
+    return send({ Accept: IMAGE_ACCEPT });
+  }
+}
+
+class TimeoutError extends Error {}
+
+function isTimeout(error: unknown): boolean {
+  return error instanceof TimeoutError;
+}
+
 // withTimeout bounds a request that cannot be aborted itself: Obsidian's
 // requestUrl has no timeout or cancellation, so a stalled server would block
 // the queue. The late response is ignored.
 function withTimeout<T>(promise: Promise<T>, ms: number, signal?: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`no response in ${Math.round(ms / 1000)} s`)), ms);
+    const timer = setTimeout(() => reject(new TimeoutError(`no response in ${Math.round(ms / 1000)} s`)), ms);
     const abort = () => reject(signal?.reason ?? new DOMException('Cancelled', 'AbortError'));
     signal?.addEventListener('abort', abort, { once: true });
     promise.then(resolve, reject).finally(() => {

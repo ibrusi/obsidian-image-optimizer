@@ -6,6 +6,19 @@ Keeps the images of your [Obsidian](https://obsidian.md) notes small and local: 
 
 It is an **Obsidian plugin** (`obsidian-plugin/`) that works on **Windows, macOS, Linux, Android and iOS**, with nothing to install in the operating system: the WebP encoder (libwebp, the library behind `cwebp`) is compiled to WebAssembly and ships inside the plugin.
 
+**Contents**
+
+- [Obsidian plugin](#-obsidian-plugin)
+  - [What it does](#what-it-does)
+  - [Installation](#installation)
+  - [Usage](#usage)
+  - [Settings](#settings)
+  - [Good to know](#good-to-know)
+- [Development](#-development)
+  - [Plugin](#plugin)
+- [License](#-license)
+- [Disclaimer](#️-disclaimer)
+
 ---
 
 ## 📱 Obsidian plugin

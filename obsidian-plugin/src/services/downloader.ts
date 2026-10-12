@@ -1,6 +1,6 @@
 import { blockedHostReason } from '../domain/policy.ts';
 import { IMAGE_ACCEPT, originalUrlsFor } from '../domain/request.ts';
-import { imageTypeOf, type ImageType } from '../domain/sniff.ts';
+import { imageTypeOf, SNIFF_BYTES, type ImageType } from '../domain/sniff.ts';
 import type { HttpPort, HttpResponse } from './ports.ts';
 
 export const DOWNLOAD_TIMEOUT_MS = 60_000;
@@ -26,10 +26,17 @@ export interface DownloadOptions {
 // firewall or a blocked client.
 export class DownloadError extends Error {
   readonly details: readonly string[];
+  /**
+   * True when asking again cannot help: the server said the file is not
+   * there or not allowed (4xx), or sent something that is not an image.
+   * Timeouts, network errors, 5xx, 408 and 429 are worth another try.
+   */
+  readonly permanent: boolean;
 
-  constructor(message: string, details: readonly string[]) {
+  constructor(message: string, details: readonly string[], permanent: boolean) {
     super(message);
     this.details = details;
+    this.permanent = permanent;
   }
 }
 
@@ -55,9 +62,19 @@ export async function download(http: HttpPort, url: string, options: DownloadOpt
         }
       }
     }
-    throw new DownloadError(error instanceof Error ? error.message : String(error), attempts);
+    throw new DownloadError(error instanceof Error ? error.message : String(error), attempts, isPermanent(error));
   }
 }
+
+// isPermanent tells a refusal that will not change during a run from a
+// passing network or server trouble.
+function isPermanent(error: unknown): boolean {
+  if (error instanceof HttpError) return error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429;
+  return error instanceof ContentError;
+}
+
+/** The response came but is not usable: not an image, too large, or refused by the host policy. */
+class ContentError extends Error {}
 
 class HttpError extends Error {
   readonly status: number;
@@ -70,17 +87,17 @@ class HttpError extends Error {
 
 async function downloadOne(http: HttpPort, url: string, options: DownloadOptions, attempts: string[]): Promise<Downloaded> {
   const blocked = blockedHostReason(url, options.allowPrivateHosts);
-  if (blocked) throw new Error(`refused: ${blocked}`);
+  if (blocked) throw new ContentError(`refused: ${blocked}`);
   options.signal?.throwIfAborted();
 
   const response = await request(http, url, options, attempts);
   if (response.status < 200 || response.status >= 300) throw new HttpError(response.status);
   const data = response.body;
   if (data.byteLength > options.maxBytes) {
-    throw new Error(`too large: ${(data.byteLength / 1048576).toFixed(1)} MB`);
+    throw new ContentError(`too large: ${(data.byteLength / 1048576).toFixed(1)} MB`);
   }
-  const type = imageTypeOf(new Uint8Array(data, 0, Math.min(data.byteLength, 16)));
-  if (!type) throw new Error('the response is not an image');
+  const type = imageTypeOf(new Uint8Array(data, 0, Math.min(data.byteLength, SNIFF_BYTES)));
+  if (!type) throw new ContentError('the response is not an image');
   return { data, type, url };
 }
 
@@ -140,7 +157,7 @@ function describeFailure(url: string, referer: string | undefined, error: unknow
 // textPreview returns the start of a body that is not an image, on one line.
 function textPreview(body: ArrayBuffer): string {
   const head = new Uint8Array(body, 0, Math.min(body.byteLength, 2048));
-  if (head.length === 0 || imageTypeOf(head.subarray(0, 16))) return '';
+  if (head.length === 0 || imageTypeOf(head.subarray(0, SNIFF_BYTES))) return '';
   const text = new TextDecoder('utf-8', { fatal: false }).decode(head)
     .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<[^>]*>/g, ' ')

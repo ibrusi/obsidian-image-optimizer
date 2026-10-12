@@ -1,4 +1,7 @@
-export type ImageType = 'jpeg' | 'png' | 'gif' | 'bmp' | 'webp';
+export type ImageType = 'jpeg' | 'png' | 'gif' | 'bmp' | 'webp' | 'svg';
+
+/** Bytes from the start of a file that imageTypeOf needs: an SVG may open with an XML declaration and comments. */
+export const SNIFF_BYTES = 1024;
 
 const EXTENSIONS: Record<ImageType, string> = {
   jpeg: 'jpg',
@@ -6,12 +9,15 @@ const EXTENSIONS: Record<ImageType, string> = {
   gif: 'gif',
   bmp: 'bmp',
   webp: 'webp',
+  svg: 'svg',
 };
 
-// imageTypeOf identifies an image by its magic bytes. Content-Type is not
-// trusted: hotlink protection often answers 200 with an HTML page.
+// imageTypeOf identifies an image by its magic bytes, or an SVG by its root
+// element, from the first SNIFF_BYTES of a file. Content-Type is not trusted:
+// hotlink protection often answers 200 with an HTML page.
 export function imageTypeOf(bytes: Uint8Array): ImageType | null {
   const ascii = (from: number, to: number) => String.fromCharCode(...bytes.subarray(from, to));
+  if (isSvg(bytes)) return 'svg';
   if (bytes.length < 12) return null;
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'jpeg';
   if (bytes[0] === 0x89 && ascii(1, 4) === 'PNG') return 'png';
@@ -19,6 +25,15 @@ export function imageTypeOf(bytes: Uint8Array): ImageType | null {
   if (ascii(0, 2) === 'BM') return 'bmp';
   if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return 'webp';
   return null;
+}
+
+// An SVG document: optional byte order mark, XML declaration, comments and
+// doctype, then the <svg> root element. An HTML page never starts this way.
+const SVG_START = /^\uFEFF?\s*(?:<\?xml[^>]*\?>\s*)?(?:(?:<!--[\s\S]*?-->|<!DOCTYPE\s+svg[^>]*>)\s*)*<svg[\s>/]/i;
+
+function isSvg(bytes: Uint8Array): boolean {
+  const head = new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(0, SNIFF_BYTES));
+  return SVG_START.test(head);
 }
 
 export function extensionOf(type: ImageType): string {

@@ -43,6 +43,9 @@ export async function convert(
   const keep = (detail: string): Converted => ({ data: input, ext: extensionOf(type), replaced: false, detail });
 
   if (type === 'webp') return keep('already WebP');
+  // A vector image stays sharp at any size and is usually smaller than any
+  // raster of it: it is saved as it is.
+  if (type === 'svg') return keep('SVG kept as is');
   if (type === 'gif') {
     if (settings.gifMode === 'keep') return keep('GIF kept as is (settings)');
     const animated = await convertAnimatedGif(input, settings, deps, signal);

@@ -299,3 +299,58 @@ test('a 404 .webp logs the original it tried as well', async () => {
     'https://x.test/a.webp', 'https://x.test/a.jpg', 'https://x.test/a.jpeg', 'https://x.test/a.png', 'https://x.test/a.gif',
   ]);
 });
+
+test('an SVG is saved locally as it is', async () => {
+  const svg = new TextEncoder().encode('<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>').buffer as ArrayBuffer;
+  const vault = new MemoryVault({ 'n.md': '![formula](https://x.test/f.svg)', 'm.md': '![](https://x.test/f.svg)' });
+  const http = new FakeHttp({ 'https://x.test/f.svg': { status: 200, body: svg, headers: { 'content-type': 'image/svg+xml' } } });
+  let converted = 0;
+  const ctx = context(vault, http, {
+    convert: async (data, type) => {
+      converted++;
+      assert.equal(type, 'svg');
+      return { data, ext: 'svg', replaced: false, detail: 'SVG kept as is' };
+    },
+  });
+  await processRemoteImages('n.md', ctx);
+  const name = `f-${await tagFor(svg)}.svg`;
+  assert.equal(vault.text('n.md'), `![[Attachments/${name}|formula]]`);
+  assert.equal(converted, 1);
+  assert.equal(ctx.stats.failed, 0);
+
+  // A second note with the same SVG links the same file.
+  await processRemoteImages('m.md', ctx);
+  assert.equal(vault.text('m.md'), `![[Attachments/${name}]]`);
+});
+
+test('a URL that failed for good is not requested again in the same run', async () => {
+  const vault = new MemoryVault({ 'a.md': '![](https://x.test/gone.jpeg)', 'b.md': '![](https://x.test/gone.jpeg)' });
+  const http = new FakeHttp({});
+  const ctx = context(vault, http, { failedUrls: new Map() });
+  await processRemoteImages('a.md', ctx);
+  await processRemoteImages('b.md', ctx);
+  assert.deepEqual(http.requests, ['https://x.test/gone.jpeg']);
+  assert.equal(ctx.stats.failed, 2);
+  assert.ok(ctx.stats.lines.includes('failed https://x.test/gone.jpeg: HTTP 404 (failed earlier in this run, not requested again)'), ctx.stats.lines.join('\n'));
+
+  // The next run starts with an empty memory and asks again.
+  const next = context(vault, http, { failedUrls: new Map() });
+  await processRemoteImages('a.md', next);
+  assert.equal(http.requests.length, 2);
+});
+
+test('network errors and server trouble are tried again in the same run', async () => {
+  const vault = new MemoryVault({ 'a.md': '![](https://x.test/a.png) ![](https://x.test/b.png)', 'b.md': '![](https://x.test/a.png) ![](https://x.test/b.png)' });
+  const http = new FakeHttp({
+    'https://x.test/a.png': new Error('net::ERR_TIMED_OUT'),
+    'https://x.test/b.png': { status: 503, body: new ArrayBuffer(0) },
+  });
+  const ctx = context(vault, http, { failedUrls: new Map() });
+  await processRemoteImages('a.md', ctx);
+  await processRemoteImages('b.md', ctx);
+  // The first failure without an answer is retried without the Referer, which
+  // is then left out for the rest of the run: 2 + 1 requests.
+  const count = (url: string) => http.requests.filter((r) => r === url).length;
+  assert.equal(count('https://x.test/a.png'), 3, 'asked again in the second note');
+  assert.equal(count('https://x.test/b.png'), 2, 'asked again in the second note');
+});

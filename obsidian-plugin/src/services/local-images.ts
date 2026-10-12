@@ -1,5 +1,5 @@
 import { findLocalLinks, replaceLocalLinks, type LocalLink } from '../domain/local-links.ts';
-import { imageTypeOf, type ImageType } from '../domain/sniff.ts';
+import { imageTypeOf, SNIFF_BYTES, type ImageType } from '../domain/sniff.ts';
 import type { Converted } from './converter.ts';
 import { IDENTICAL, type ImageLibrary, REUSED } from './library.ts';
 import type { LinkPort, MetadataPort, VaultPort } from './ports.ts';
@@ -61,7 +61,7 @@ export class LocalImages {
   private async processImage(original: string, notePath: string): Promise<void> {
     const { vault, metadata, stats } = this.ctx;
     const data = await vault.readBinary(original);
-    const type = imageTypeOf(new Uint8Array(data, 0, Math.min(data.byteLength, 16)));
+    const type = imageTypeOf(new Uint8Array(data, 0, Math.min(data.byteLength, SNIFF_BYTES)));
     if (!type) {
       stats.skipped(original, 'not a readable image');
       return;

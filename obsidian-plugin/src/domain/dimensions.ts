@@ -24,6 +24,8 @@ export function dimensionsOf(bytes: Uint8Array, type: ImageType): Dimensions | n
         return jpegDimensions(bytes, view);
       case 'webp':
         return webpDimensions(bytes, view);
+      case 'svg': // vector: no pixel size to guard
+        return null;
     }
   } catch {
     return null; // truncated header

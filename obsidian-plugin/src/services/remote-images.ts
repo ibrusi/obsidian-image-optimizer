@@ -5,7 +5,7 @@ import { pageUrlOf, refererFor } from '../domain/request.ts';
 import type { ImageType } from '../domain/sniff.ts';
 import type { PluginSettings } from '../settings.ts';
 import type { Converted } from './converter.ts';
-import { download } from './downloader.ts';
+import { download, DownloadError } from './downloader.ts';
 import { IDENTICAL, type ImageLibrary, REUSED } from './library.ts';
 import type { HttpPort, LinkPort, VaultPort } from './ports.ts';
 import type { RunStats } from './stats.ts';
@@ -19,6 +19,12 @@ export interface RemoteContext {
   settings: Pick<PluginSettings, 'folder' | 'maxDownloadMB' | 'allowPrivateHosts'>;
   stats: RunStats;
   signal?: AbortSignal;
+  /**
+   * URLs that failed for good earlier in this run, with the reason: a link
+   * shared by many notes is not requested again. Lives for one run only, so
+   * a file that comes back is found by the next run.
+   */
+  failedUrls?: Map<string, string>;
 }
 
 // processRemoteImages saves the web images of a note locally (as WebP when
@@ -38,10 +44,16 @@ export async function processRemoteImages(
   for (const url of urls) {
     if (only && !only.has(url)) continue;
     ctx.signal?.throwIfAborted();
+    const failedBefore = ctx.failedUrls?.get(url);
+    if (failedBefore !== undefined) {
+      ctx.stats.error(url, new Error(`${failedBefore} (failed earlier in this run, not requested again)`));
+      continue;
+    }
     try {
       await processOne(notePath, noteDir, url, pageUrl, ctx);
     } catch (error) {
       if (ctx.signal?.aborted) throw error;
+      if (error instanceof DownloadError && error.permanent) ctx.failedUrls?.set(url, error.message);
       ctx.stats.error(url, error);
     }
   }

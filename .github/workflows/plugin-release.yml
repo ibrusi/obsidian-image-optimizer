@@ -62,7 +62,7 @@ jobs:
         if: steps.version.outputs.publish == 'true'
         run: |
           mkdir -p dist/obsidian-image-optimizer
-          cp main.js manifest.json dist/obsidian-image-optimizer/
+          cp main.js manifest.json ../LICENSE THIRD_PARTY_NOTICES.md dist/obsidian-image-optimizer/
           (cd dist && zip -r obsidian-image-optimizer.zip obsidian-image-optimizer)
 
       - name: Publish release
@@ -73,7 +73,7 @@ jobs:
           PRERELEASE: ${{ steps.version.outputs.prerelease }}
         run: |
           gh release create "$VERSION" \
-            main.js manifest.json dist/obsidian-image-optimizer.zip \
+            main.js manifest.json ../LICENSE THIRD_PARTY_NOTICES.md dist/obsidian-image-optimizer.zip \
             $PRERELEASE \
             --target "$GITHUB_SHA" \
             --title "Image Optimizer $VERSION" \

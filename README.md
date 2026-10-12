@@ -81,6 +81,14 @@ CI (`.github/workflows/ci.yml`) runs the same checks, including the encoders in 
 
 ---
 
+## 📄 License
+
+[MIT](LICENSE) © 2026 Andrey Brusi (ibrusi).
+
+The plugin bundles libwebp (BSD-3-Clause), [@jsquash/webp](https://github.com/jamsinclair/jSquash) and [wasm-feature-detect](https://github.com/GoogleChromeLabs/wasm-feature-detect) (Apache-2.0), and [wasm-webp](https://github.com/nieyuyao/webp-wasm) (MIT); their licenses are in [THIRD_PARTY_NOTICES.md](obsidian-plugin/THIRD_PARTY_NOTICES.md) and in every release.
+
+---
+
 ## ⚠️ Disclaimer
 
 > [!WARNING]

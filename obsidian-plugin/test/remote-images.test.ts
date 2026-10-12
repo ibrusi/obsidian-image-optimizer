@@ -171,3 +171,14 @@ test('a file with the tag but another size is a collision and is not reused', as
   assert.equal(vault.text('b.md'), `![[Attachments/${A.replace('.webp', '-1.webp')}]]`);
   assert.equal(vault.files.size, 3, 'the other image is untouched');
 });
+
+test('the same picture arriving as another original reuses the WebP it encodes to', async () => {
+  // A picture copied in a browser comes back from the clipboard as another
+  // PNG; decoded and encoded, it gives the same WebP as the download.
+  const vault = new MemoryVault({ 'n.md': '![](https://x.test/a.png)', 'Attachments/Pasted image-0123456789abcdef.webp': WEBP });
+  const http = new FakeHttp({ 'https://x.test/a.png': { status: 200, body: PNG } });
+  const ctx = context(vault, http);
+  await processRemoteImages('n.md', ctx);
+  assert.equal(vault.text('n.md'), '![[Attachments/Pasted image-0123456789abcdef.webp]]');
+  assert.match(ctx.stats.lines.join('\n'), /identical file already in the vault, reused/);
+});

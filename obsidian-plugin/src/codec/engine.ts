@@ -9,6 +9,9 @@ import type { AnimationFrame, AnimationOptions, EncoderVariant, StillOptions, Wa
 
 const EMPTY = new ArrayBuffer(0);
 
+// In lossless mode libwebp reads "quality" as effort; 75 is its default.
+const LOSSLESS_EFFORT = 75;
+
 // Engine is the WebAssembly encoder itself. It runs inside the worker and,
 // when a worker cannot be started, on the main thread. It receives the .wasm
 // bytes instead of importing them, so the worker bundle stays small.
@@ -40,7 +43,9 @@ export class Engine {
   }
 
   encodeStill(rgba: Uint8ClampedArray<ArrayBuffer> | Uint8Array<ArrayBuffer>, width: number, height: number, options: StillOptions): Uint8Array {
-    const settings: EncodeOptions = { ...defaultOptions, quality: options.quality, method: options.method };
+    const settings: EncodeOptions = options.compression === 'lossless'
+      ? { ...defaultOptions, lossless: 1, quality: LOSSLESS_EFFORT, method: options.method }
+      : { ...defaultOptions, quality: options.quality, method: options.method };
     const result = this.still.encode(rgba, width, height, settings);
     if (!result) throw new Error('WebP encoding failed');
     // Copy out of the WebAssembly heap, which the next call may reuse.
@@ -58,13 +63,16 @@ export class Engine {
       locateFile: (path: string) => path,
     });
     const module = await this.animation;
+    const config = options.compression === 'lossless'
+      ? { lossless: 1, quality: LOSSLESS_EFFORT }
+      : { lossless: 0, quality: options.quality };
     const vector = new module.VectorWebPAnimationFrame();
     try {
       for (let i = 0; i < frames.length; i++) {
         vector.push_back({
           data: new Uint8Array(frames[i].rgba),
           duration: frames[i].durationMs,
-          config: { lossless: 0, quality: options.quality },
+          config,
           has_config: true,
         });
         frames[i] = { rgba: EMPTY, durationMs: frames[i].durationMs };

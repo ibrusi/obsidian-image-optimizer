@@ -53,6 +53,18 @@ async function decodesTo(data: ArrayBuffer, width: number, height: number): Prom
   return ok;
 }
 
+// pixelsOf decodes WebP bytes with the browser's decoder.
+async function pixelsOf(data: ArrayBuffer): Promise<ImageData> {
+  const bitmap = await createImageBitmap(new Blob([data], { type: 'image/webp' }));
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+  ctx.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  return ctx.getImageData(0, 0, canvas.width, canvas.height);
+}
+
 function equal(a: ArrayBuffer, b: ArrayBuffer): boolean {
   if (a.byteLength !== b.byteLength) return false;
   const x = new Uint8Array(a);
@@ -64,7 +76,7 @@ function equal(a: ArrayBuffer, b: ArrayBuffer): boolean {
   const checks: Check[] = [];
   const check = (name: string, ok: boolean, detail = '') => checks.push({ name, ok, detail });
   const image = syntheticImage(1200, 800);
-  const options = { quality: 40, method: 4 };
+  const options = { compression: 'lossy', quality: 40, method: 4 } as const;
 
   const worker = await WorkerCodec.start(WASM);
   const inThread = new MainThreadCodec(await Engine.create(WASM));
@@ -80,13 +92,18 @@ function equal(a: ArrayBuffer, b: ArrayBuffer): boolean {
     check('queued requests all complete', both.every((r) => equal(r.data, viaWorker.data)));
 
     const controller = new AbortController();
-    const cancelled = worker.encodeStill(copy(syntheticImage(3000, 2000)), { quality: 40, method: 6 }, controller.signal);
+    const cancelled = worker.encodeStill(copy(syntheticImage(3000, 2000)), { ...options, method: 6 }, controller.signal);
     setTimeout(() => controller.abort(), 20);
     const outcome = await cancelled.then(() => 'finished', (e: Error) => e.name);
     check('cancel stops the encoder', outcome === 'AbortError', outcome);
 
     const after = await worker.encodeStill(copy(image), options);
     check('the worker restarts after a cancel', equal(after.data, viaWorker.data));
+
+    const lossless = await worker.encodeStill(copy(image), { ...options, compression: 'lossless' });
+    const decoded = await pixelsOf(lossless.data);
+    check('lossless WebP is pixel-exact', decoded.data.every((v, i) => v === image.data[i]),
+      `${lossless.data.byteLength} B lossless vs ${viaWorker.data.byteLength} B lossy`);
 
     await checkAnimation(check, worker, inThread);
   } finally {
@@ -132,8 +149,9 @@ async function checkAnimation(check: CheckFn, worker: WorkerCodec, inThread: Mai
 
   const frames = () => gif.frames.map((f) => ({ rgba: f.rgba.slice().buffer, durationMs: f.durationMs }));
   const animation = () => ({ width: gif.width, height: gif.height, frames: frames() });
-  const viaWorker = await worker.encodeAnimation(animation(), { quality: 40 });
-  const viaMain = await inThread.encodeAnimation(animation(), { quality: 40 });
+  const lossy = { compression: 'lossy', quality: 40 } as const;
+  const viaWorker = await worker.encodeAnimation(animation(), lossy);
+  const viaMain = await inThread.encodeAnimation(animation(), lossy);
   const chunks = riffChunks(new Uint8Array(viaWorker.data));
   const frameChunks = chunks.filter((c) => c === 'ANMF').length;
   check('animated WebP has an ANIM chunk and its frames', chunks.includes('ANIM') && frameChunks >= 2 && frameChunks <= gif.frames.length,
@@ -142,6 +160,18 @@ async function checkAnimation(check: CheckFn, worker: WorkerCodec, inThread: Mai
   const bitmap = await createImageBitmap(new Blob([viaWorker.data], { type: 'image/webp' }));
   check('animated WebP decodes', bitmap.width === gif.width && bitmap.height === gif.height);
   bitmap.close();
+
+  const lossless = await worker.encodeAnimation(animation(), { ...lossy, compression: 'lossless' });
+  const first = await pixelsOf(lossless.data);
+  const reference = gif.frames[0].rgba;
+  let differing = 0;
+  for (let p = 0; p < reference.length; p += 4) {
+    // Colours under fully transparent pixels are free for the encoder.
+    if (reference[p + 3] !== first.data[p + 3] ||
+      (reference[p + 3] !== 0 && (reference[p] !== first.data[p] || reference[p + 1] !== first.data[p + 1] || reference[p + 2] !== first.data[p + 2]))) differing++;
+  }
+  check('lossless animated WebP keeps the first frame exactly', differing === 0,
+    `${differing} differing pixels, ${lossless.data.byteLength} B lossless vs ${viaWorker.data.byteLength} B lossy`);
 }
 
 // riffChunks lists the top-level chunk types of a WebP file.

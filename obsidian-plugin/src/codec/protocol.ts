@@ -1,5 +1,7 @@
 // Messages between the plugin and the encoder worker.
 
+import type { Compression } from '../domain/compression.ts';
+
 export interface WasmBinaries {
   stillScalar: ArrayBuffer;
   stillSimd: ArrayBuffer;
@@ -7,11 +9,15 @@ export interface WasmBinaries {
 }
 
 export interface StillOptions {
+  compression: Compression;
+  /** Lossy quality, 1–100; lossless encoding ignores it. */
   quality: number;
   method: number;
 }
 
 export interface AnimationOptions {
+  compression: Compression;
+  /** Lossy quality, 1–100; lossless encoding ignores it. */
   quality: number;
 }
 

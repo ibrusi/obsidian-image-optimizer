@@ -1,5 +1,9 @@
 import { dimensionsOf } from '../domain/dimensions.ts';
-import { decodeGif, scanGif } from '../domain/gif.ts';
+import { type DecodedGif, decodeGif, scanGif } from '../domain/gif.ts';
+import {
+  ANIMATION_LOSSLESS_MAX_COLORS, changedShare, type Compression, type CompressionPlan, countColors,
+  LOSSY_MIN_COLORS, LOSSY_ONLY, planForAnimation, planForStill,
+} from '../domain/compression.ts';
 import { worthReplacing } from '../domain/policy.ts';
 import { extensionOf, type ImageType } from '../domain/sniff.ts';
 import type { AnimationFrame, AnimationOptions, StillOptions } from '../codec/protocol.ts';
@@ -51,18 +55,57 @@ export async function convert(
     return keep(`too large to convert: ${megapixels(size.width * size.height)} MP`);
   }
 
-  signal?.throwIfAborted();
-  const pixels = await deps.decode(input);
-  const encoded = await deps.encodeStill(pixels, { quality: settings.quality, method: settings.method }, signal);
-  if (!worthReplacing(input.byteLength, encoded.data.byteLength, settings.minSavingsPercent)) {
-    return keep(`WebP saves less than ${settings.minSavingsPercent}% (${formatBytes(encoded.data.byteLength)})`);
+  // The pixels decoded for choosing the plan feed the first attempt; a
+  // fallback decodes again, as the encoder takes ownership of the pixels and
+  // decoding costs less memory than keeping a copy.
+  let decoded: ImageData | null = await deps.decode(input);
+  const plan = type === 'jpeg' ? LOSSY_ONLY : planForStill(countColors(decoded.data, LOSSY_MIN_COLORS));
+  const best = await encodeByPlan(plan, async (compression) => {
+    const pixels = decoded ?? await deps.decode(input);
+    decoded = null;
+    return deps.encodeStill(pixels, { compression, quality: settings.quality, method: settings.method }, signal);
+  }, (size) => worthReplacing(input.byteLength, size, settings.minSavingsPercent), signal);
+  if (!worthReplacing(input.byteLength, best.data.byteLength, settings.minSavingsPercent)) {
+    return keep(`WebP saves less than ${settings.minSavingsPercent}% (${formatBytes(best.data.byteLength)})`);
   }
   return {
-    data: encoded.data,
+    data: best.data,
     ext: 'webp',
     replaced: true,
-    detail: `${formatBytes(input.byteLength)} → ${formatBytes(encoded.data.byteLength)}`,
+    detail: `${best.compression}, ${formatBytes(input.byteLength)} → ${formatBytes(best.data.byteLength)}`,
   };
+}
+
+interface Candidate {
+  data: ArrayBuffer;
+  compression: Compression;
+}
+
+// encodeByPlan encodes with the plan's compressions in turn and returns the
+// smallest result (on a tie the earlier one). A plan sure of its first
+// choice stops as soon as a result is worth keeping.
+async function encodeByPlan(
+  plan: CompressionPlan,
+  encode: (compression: Compression) => Promise<{ data: ArrayBuffer }>,
+  worthy: (size: number) => boolean,
+  signal?: AbortSignal,
+): Promise<Candidate> {
+  let best: Candidate | null = null;
+  for (const compression of plan.candidates) {
+    signal?.throwIfAborted();
+    const { data } = await encode(compression);
+    if (!best || data.byteLength < best.data.byteLength) best = { data, compression };
+    if (plan.stopAtFirstWorthy && worthy(best.data.byteLength)) break;
+  }
+  if (!best) throw new Error('no compression to try');
+  return best;
+}
+
+// animationPlan measures the frames without keeping references to them, so
+// they can be freed once the encoder has them.
+function animationPlan(gif: DecodedGif): CompressionPlan {
+  const frames = gif.frames.map((f) => f.rgba);
+  return planForAnimation(countColors(frames[0], ANIMATION_LOSSLESS_MAX_COLORS), changedShare(frames));
 }
 
 // convertAnimatedGif returns null for single-frame GIFs.
@@ -83,18 +126,24 @@ async function convertAnimatedGif(
   if (pixels > settings.maxMegapixels * 1e6) {
     return keep(`animation too large to convert: ${info.frames} frames, ${megapixels(pixels)} MP in total`);
   }
-  signal?.throwIfAborted();
-  const gif = decodeGif(bytes);
-  const frames = gif.frames.map((f) => ({ rgba: f.rgba.buffer, durationMs: f.durationMs }));
-  const encoded = await deps.encodeAnimation({ width: gif.width, height: gif.height, frames }, { quality: settings.quality }, signal);
-  if (!worthReplacing(input.byteLength, encoded.data.byteLength, settings.minSavingsPercent)) {
-    return keep(`animated WebP saves less than ${settings.minSavingsPercent}% (${formatBytes(encoded.data.byteLength)})`);
+  // Like still images, the frames decoded for the plan feed the first
+  // attempt and a fallback decodes the GIF again.
+  let decoded: DecodedGif | null = decodeGif(bytes);
+  const plan = animationPlan(decoded);
+  const best = await encodeByPlan(plan, (compression) => {
+    const gif = decoded ?? decodeGif(bytes);
+    decoded = null;
+    const frames = gif.frames.map((f) => ({ rgba: f.rgba.buffer, durationMs: f.durationMs }));
+    return deps.encodeAnimation({ width: gif.width, height: gif.height, frames }, { compression, quality: settings.quality }, signal);
+  }, (size) => worthReplacing(input.byteLength, size, settings.minSavingsPercent), signal);
+  if (!worthReplacing(input.byteLength, best.data.byteLength, settings.minSavingsPercent)) {
+    return keep(`animated WebP saves less than ${settings.minSavingsPercent}% (${formatBytes(best.data.byteLength)})`);
   }
   return {
-    data: encoded.data,
+    data: best.data,
     ext: 'webp',
     replaced: true,
-    detail: `${info.frames} frames, ${formatBytes(input.byteLength)} → ${formatBytes(encoded.data.byteLength)}`,
+    detail: `${info.frames} frames, ${best.compression}, ${formatBytes(input.byteLength)} → ${formatBytes(best.data.byteLength)}`,
   };
 }
 

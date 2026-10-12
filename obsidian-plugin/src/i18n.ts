@@ -20,6 +20,7 @@ export type FolderError =
 const en = {
   commands: {
     optimizeNote: 'Optimize images in the current note',
+    optimizeFolder: 'Optimize images in the current note\'s folder',
     optimizeVault: 'Optimize images in the whole vault',
     stop: 'Stop image optimization',
   },
@@ -32,9 +33,13 @@ const en = {
     details: (path: string) => `. Details: ${path}`,
     stopped: 'Stopped. ',
   },
+  menu: {
+    optimizeFolder: 'Optimize images in this folder',
+  },
   placeholder: 'Optimizing image',
   progress: {
     title: 'Optimizing images in the vault',
+    folderTitle: (folder: string) => `Optimizing images in ${folder}`,
     stop: 'Stop',
     note: (n: number, total: number, summary: string) => `Note ${n} of ${total}: ${summary}`,
   },
@@ -124,6 +129,7 @@ export type Strings = typeof en;
 const ru: Strings = {
   commands: {
     optimizeNote: 'Сжать картинки в текущей заметке',
+    optimizeFolder: 'Сжать картинки в папке текущей заметки',
     optimizeVault: 'Сжать картинки во всём хранилище',
     stop: 'Остановить сжатие картинок',
   },
@@ -136,9 +142,13 @@ const ru: Strings = {
     details: (path) => `. Подробности: ${path}`,
     stopped: 'Остановлено. ',
   },
+  menu: {
+    optimizeFolder: 'Сжать картинки в этой папке',
+  },
   placeholder: 'Сжатие картинки',
   progress: {
     title: 'Сжатие картинок в хранилище',
+    folderTitle: (folder) => `Сжатие картинок в папке ${folder}`,
     stop: 'Остановить',
     note: (n, total, summary) => `Заметка ${n} из ${total}: ${summary}`,
   },

@@ -31,8 +31,11 @@ Open the command palette (`Ctrl/Cmd+P` on a computer; on a phone swipe down in a
 | Command | What it does |
 | :--- | :--- |
 | **Optimize images in the current note** | Downloads web images and converts the note's images. |
+| **Optimize images in the current note's folder** | The same for every note in the note's folder and its subfolders, with progress and a Stop button. |
 | **Optimize images in the whole vault** | The same for every note, with progress and a Stop button. |
 | **Stop image optimization** | Stops what is running. Finished images stay done. |
+
+To pick any folder, right-click it in the file explorer (long-press on a phone) and choose **Optimize images in this folder**. Images are found through the folder's notes, so an image stored elsewhere but embedded in them is converted too.
 
 With **Convert on paste and drop** enabled (default), pasted and dropped images are handled without any command.
 

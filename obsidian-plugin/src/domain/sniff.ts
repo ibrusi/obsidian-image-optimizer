@@ -1,4 +1,5 @@
-export type ImageType = 'jpeg' | 'png' | 'gif' | 'bmp' | 'webp' | 'svg';
+/** A file the plugin saves: images, and PDF documents when PDF downloads are on. */
+export type ImageType = 'jpeg' | 'png' | 'gif' | 'bmp' | 'webp' | 'svg' | 'pdf';
 
 /** Bytes from the start of a file that imageTypeOf needs: an SVG may open with an XML declaration and comments. */
 export const SNIFF_BYTES = 1024;
@@ -10,6 +11,7 @@ const EXTENSIONS: Record<ImageType, string> = {
   bmp: 'bmp',
   webp: 'webp',
   svg: 'svg',
+  pdf: 'pdf',
 };
 
 // imageTypeOf identifies an image by its magic bytes, or an SVG by its root
@@ -18,6 +20,7 @@ const EXTENSIONS: Record<ImageType, string> = {
 export function imageTypeOf(bytes: Uint8Array): ImageType | null {
   const ascii = (from: number, to: number) => String.fromCharCode(...bytes.subarray(from, to));
   if (isSvg(bytes)) return 'svg';
+  if (ascii(0, 5) === '%PDF-') return 'pdf';
   if (bytes.length < 12) return null;
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'jpeg';
   if (bytes[0] === 0x89 && ascii(1, 4) === 'PNG') return 'png';

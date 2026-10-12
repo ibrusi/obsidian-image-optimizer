@@ -27,7 +27,8 @@ export async function savePastedImage(
   now = new Date(),
 ): Promise<string | null> {
   const type = imageTypeOf(new Uint8Array(data, 0, Math.min(data.byteLength, SNIFF_BYTES)));
-  if (!type) return null;
+  // A pasted PDF is a document, not an image: Obsidian attaches it itself.
+  if (!type || type === 'pdf') return null;
   const label = fileName || 'pasted image';
 
   const found = await ctx.library.find(data, type);

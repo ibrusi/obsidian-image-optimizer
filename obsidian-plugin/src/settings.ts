@@ -21,6 +21,8 @@ export interface PluginSettings {
   autoOnPaste: boolean;
   /** Link a byte-identical file of the same name instead of saving a copy. */
   reuseIdentical: boolean;
+  /** Also download PDF files that notes embed or link to, saved as they are. */
+  downloadPdf: boolean;
   maxDownloadMB: number;
   /** Decoded size limit; for GIFs width × height × frames. */
   maxMegapixels: number;
@@ -39,6 +41,7 @@ export const DEFAULT_SETTINGS: Readonly<PluginSettings> = Object.freeze({
   convertLocal: true,
   autoOnPaste: true,
   reuseIdentical: true,
+  downloadPdf: false,
   maxDownloadMB: 30,
   maxMegapixels: 50,
   allowPrivateHosts: false,
@@ -74,6 +77,7 @@ export function normalizeSettings(raw: unknown): PluginSettings {
     convertLocal: bool(data.convertLocal, DEFAULT_SETTINGS.convertLocal),
     autoOnPaste: bool(data.autoOnPaste, DEFAULT_SETTINGS.autoOnPaste),
     reuseIdentical: bool(data.reuseIdentical, DEFAULT_SETTINGS.reuseIdentical),
+    downloadPdf: bool(data.downloadPdf, DEFAULT_SETTINGS.downloadPdf),
     maxDownloadMB: clampInt(data.maxDownloadMB, 'maxDownloadMB'),
     maxMegapixels: clampInt(data.maxMegapixels, 'maxMegapixels'),
     allowPrivateHosts: bool(data.allowPrivateHosts, DEFAULT_SETTINGS.allowPrivateHosts),

@@ -91,6 +91,7 @@ export class ImageOptimizerSettingTab extends PluginSettingTab {
     this.toggle(containerEl, t.convertLocal, 'convertLocal');
     this.toggle(containerEl, t.autoOnPaste, 'autoOnPaste');
     this.toggle(containerEl, t.reuseIdentical, 'reuseIdentical');
+    this.toggle(containerEl, t.downloadPdf, 'downloadPdf');
 
     new Setting(containerEl).setName(t.limits).setHeading();
     this.number(containerEl, t.maxDownload, 'maxDownloadMB');

@@ -33,3 +33,10 @@ test('SVG is recognized by its root element, HTML is not', () => {
   assert.equal(imageTypeOf(bytes('<svgfoo>')), null);
   assert.equal(extensionOf('svg'), 'svg');
 });
+
+test('PDF is recognized by its header', () => {
+  const pdf = new TextEncoder().encode('%PDF-1.7\n%\u00e2\u00e3\n1 0 obj');
+  assert.equal(imageTypeOf(pdf), 'pdf');
+  assert.equal(extensionOf('pdf'), 'pdf');
+  assert.equal(isConvertible('pdf'), false);
+});

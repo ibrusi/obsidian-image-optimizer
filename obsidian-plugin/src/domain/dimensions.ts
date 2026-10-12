@@ -25,6 +25,7 @@ export function dimensionsOf(bytes: Uint8Array, type: ImageType): Dimensions | n
       case 'webp':
         return webpDimensions(bytes, view);
       case 'svg': // vector: no pixel size to guard
+      case 'pdf': // a document, never decoded
         return null;
     }
   } catch {

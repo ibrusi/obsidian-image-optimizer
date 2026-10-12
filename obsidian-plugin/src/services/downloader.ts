@@ -19,6 +19,8 @@ export interface DownloadOptions {
   signal?: AbortSignal;
   /** The page showing the image, for sites that refuse images to other pages. */
   referer?: string;
+  /** Accept a PDF document as well as an image. */
+  allowPdf?: boolean;
 }
 
 // DownloadError is a failed download with every request it took, for the
@@ -97,7 +99,9 @@ async function downloadOne(http: HttpPort, url: string, options: DownloadOptions
     throw new ContentError(`too large: ${(data.byteLength / 1048576).toFixed(1)} MB`);
   }
   const type = imageTypeOf(new Uint8Array(data, 0, Math.min(data.byteLength, SNIFF_BYTES)));
-  if (!type) throw new ContentError('the response is not an image');
+  if (!type || (type === 'pdf' && !options.allowPdf)) {
+    throw new ContentError(options.allowPdf ? 'the response is neither an image nor a PDF' : 'the response is not an image');
+  }
   return { data, type, url };
 }
 

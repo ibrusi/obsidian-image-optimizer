@@ -18,7 +18,7 @@ function context(vault: MemoryVault, http: FakeHttp, overrides: Partial<RemoteCo
     http,
     library: memoryLibrary(vault),
     convert: async (_data: ArrayBuffer, _type: ImageType): Promise<Converted> => ({ data: WEBP, ext: 'webp', replaced: true, detail: 'ok' }),
-    settings: { folder: 'Attachments', maxDownloadMB: 30, allowPrivateHosts: false },
+    settings: { folder: 'Attachments', maxDownloadMB: 30, allowPrivateHosts: false, downloadPdf: false },
     stats: new RunStats(),
     ...overrides,
   };
@@ -353,4 +353,39 @@ test('network errors and server trouble are tried again in the same run', async 
   const count = (url: string) => http.requests.filter((r) => r === url).length;
   assert.equal(count('https://x.test/a.png'), 3, 'asked again in the second note');
   assert.equal(count('https://x.test/b.png'), 2, 'asked again in the second note');
+});
+
+const PDF = new TextEncoder().encode('%PDF-1.7\n1 0 obj << >> endobj\n%%EOF\n').buffer as ArrayBuffer;
+const keepAsIs = async (data: ArrayBuffer, type: string): Promise<Converted> => ({ data, ext: type, replaced: false, detail: `${type} kept as is` });
+
+test('with PDFs on, a linked PDF is saved as it is and the link points at it', async () => {
+  const vault = new MemoryVault({ 'n.md': 'Read [the paper](https://x.test/p.pdf) and ![](https://x.test/p.pdf)' });
+  const http = new FakeHttp({ 'https://x.test/p.pdf': { status: 200, body: PDF } });
+  const ctx = context(vault, http, {
+    convert: keepAsIs,
+    settings: { folder: 'Attachments', maxDownloadMB: 30, allowPrivateHosts: false, downloadPdf: true },
+  });
+  await processRemoteImages('n.md', ctx);
+  const name = `p-${await tagFor(PDF)}.pdf`;
+  assert.equal(vault.text('n.md'), `Read [[Attachments/${name}|the paper]] and ![[Attachments/${name}]]`);
+  assert.deepEqual(http.requests, ['https://x.test/p.pdf'], 'one download for both');
+  assert.equal(ctx.stats.failed, 0);
+});
+
+test('with PDFs off, PDF links and embeds are not requested', async () => {
+  const vault = new MemoryVault({ 'n.md': '[paper](https://x.test/p.pdf) ![](https://x.test/p.pdf)' });
+  const http = new FakeHttp({ 'https://x.test/p.pdf': { status: 200, body: PDF } });
+  const ctx = context(vault, http);
+  await processRemoteImages('n.md', ctx);
+  assert.deepEqual(http.requests, []);
+  assert.equal(ctx.stats.total, 0);
+});
+
+test('a PDF link that answers with a web page keeps its link', async () => {
+  const vault = new MemoryVault({ 'n.md': '[paper](https://x.test/p.pdf)' });
+  const http = new FakeHttp({ 'https://x.test/p.pdf': { status: 200, body: HTML } });
+  const ctx = context(vault, http, { settings: { folder: 'Attachments', maxDownloadMB: 30, allowPrivateHosts: false, downloadPdf: true } });
+  await processRemoteImages('n.md', ctx);
+  assert.equal(vault.text('n.md'), '[paper](https://x.test/p.pdf)');
+  assert.ok(ctx.stats.lines.includes('failed https://x.test/p.pdf: the response is neither an image nor a PDF'), ctx.stats.lines.join('\n'));
 });

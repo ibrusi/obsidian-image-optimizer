@@ -90,3 +90,29 @@ test('YouTube videos and tweets embedded as images are not images', () => {
     'https://x.com/logo.png',
   ]);
 });
+
+test('PDF embeds and links are found only when PDFs are on', () => {
+  const text = [
+    '![scan](https://x.test/doc.pdf)',
+    'See [the paper](https://x.test/files/paper.PDF?download=1) and [a page](https://x.test/page).',
+    '[![cover](https://x.test/cover.png)](https://x.test/book.pdf)',
+    '`[code](https://x.test/code.pdf)` \\[escaped](https://x.test/e.pdf)',
+    '<img src="https://x.test/img.pdf">',
+  ].join('\n');
+
+  assert.deepEqual(findRemoteImages(text).map((i) => i.url), ['https://x.test/cover.png'], 'off: PDFs are left alone');
+
+  const found = findRemoteImages(text, { pdf: true }).map((i) => [i.url, i.link, i.alt]);
+  assert.deepEqual(found, [
+    ['https://x.test/doc.pdf', false, 'scan'],
+    ['https://x.test/files/paper.PDF?download=1', true, 'the paper'],
+    ['https://x.test/cover.png', false, 'cover'],
+    ['https://x.test/img.pdf', false, ''],
+  ]);
+});
+
+test('replaceImages rewrites PDF links with the same options', () => {
+  const text = 'A [paper](https://x.test/p.pdf) B';
+  assert.equal(replaceImages(text, () => '[paper](local.pdf)'), text, 'off: untouched');
+  assert.equal(replaceImages(text, () => '[paper](local.pdf)', { pdf: true }), 'A [paper](local.pdf) B');
+});

@@ -181,6 +181,7 @@ export default class ImageOptimizerPlugin extends Plugin {
 
   private readonly pasteActions: PasteActions = {
     enabled: () => this.settings.autoOnPaste,
+    downloadPdf: () => this.settings.downloadPdf,
     placeholder: () => this.strings.placeholder,
     saveImages: (files, notePath, placeholder) => {
       // The clipboard is read right away, and the job is not cancellable:

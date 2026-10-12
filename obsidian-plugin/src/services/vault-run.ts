@@ -26,7 +26,7 @@ export async function optimizeNotes(notes: string[], ctx: RemoteContext & LocalC
       const note = notes[i];
       options.onProgress({ done: i, total: notes.length, note });
       const text = await ctx.vault.read(note);
-      const hasRemote = findRemoteImages(text).length > 0;
+      const hasRemote = findRemoteImages(text, { pdf: ctx.settings.downloadPdf }).length > 0;
       const hasLocal = local !== null && findLocalLinks(text).some((link) => link.embed);
       if (!hasRemote && !hasLocal) continue;
       await ctx.flush(note);

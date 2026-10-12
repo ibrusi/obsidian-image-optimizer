@@ -3,9 +3,9 @@ import { test } from 'node:test';
 import type { Converted } from '../src/services/converter.ts';
 import { savePastedImage } from '../src/services/pasted-images.ts';
 import { RunStats } from '../src/services/stats.ts';
-import { memoryLibrary, MemoryVault, tagFor } from './fakes.ts';
+import { memoryLibrary, MemoryVault, tagFor, testPng, testWebp } from './fakes.ts';
 
-const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Array(500).fill(9)]).buffer;
+const PNG = testPng(32, 24, 9, 508);
 const now = new Date(2026, 9, 11, 15, 30, 5);
 const TAG = await tagFor(PNG);
 
@@ -52,7 +52,7 @@ test('pasting the same image again links the file saved the first time', async (
   const ctx = () => ({
     vault,
     library,
-    convert: async (): Promise<Converted> => ({ data: new Uint8Array(10 + ++encodes).buffer, ext: 'webp', replaced: true, detail: 'ok' }),
+    convert: async (): Promise<Converted> => ({ data: testWebp(32, 24, 40 + ++encodes), ext: 'webp', replaced: true, detail: 'ok' }),
     settings: { folder: '' },
     stats: new RunStats(),
   });

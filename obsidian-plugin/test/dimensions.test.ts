@@ -35,3 +35,18 @@ test('truncated or unknown headers give null', () => {
   assert.equal(dimensionsOf(Uint8Array.from([0xff, 0xd8, 0xff, 0xe0]), 'jpeg'), null);
   assert.equal(dimensionsOf(new Uint8Array(40), 'webp'), null);
 });
+
+test('WebP dimensions from VP8X, VP8 and VP8L headers', () => {
+  const riff = (chunk: string, payload: number[]) => Uint8Array.from([
+      ...[...'RIFF'].map((c) => c.charCodeAt(0)), 0, 0, 0, 0, ...[...'WEBP'].map((c) => c.charCodeAt(0)),
+      ...[...chunk].map((c) => c.charCodeAt(0)), 0, 0, 0, 0, ...payload,
+    ]);
+  // VP8X: flags, 3 reserved bytes, then width-1 and height-1 as 24-bit numbers.
+  assert.deepEqual(dimensionsOf(riff('VP8X', [0x10, 0, 0, 0, 0x73, 0x04, 0, 0x3b, 0x03, 0]), 'webp'), { width: 1140, height: 828 });
+  // VP8: frame tag, start code 9d 01 2a, then 14-bit width and height.
+  assert.deepEqual(dimensionsOf(riff('VP8 ', [0, 0, 0, 0x9d, 0x01, 0x2a, 0x80, 0x07, 0x38, 0x04]), 'webp'), { width: 1920, height: 1080 });
+  // VP8L: signature 0x2f, then width-1 and height-1 in 14 bits each.
+  const bits = (1439) | (899 << 14);
+  assert.deepEqual(dimensionsOf(riff('VP8L', [0x2f, bits & 0xff, (bits >> 8) & 0xff, (bits >> 16) & 0xff, bits >>> 24]), 'webp'), { width: 1440, height: 900 });
+  assert.equal(dimensionsOf(riff('VP8 ', [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), 'webp'), null, 'no start code');
+});

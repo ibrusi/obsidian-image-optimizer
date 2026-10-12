@@ -30,7 +30,7 @@ export async function savePastedImage(
   if (!type) return null;
   const label = fileName || 'pasted image';
 
-  const found = await ctx.library.find(data);
+  const found = await ctx.library.find(data, type);
   if (found.path) {
     ctx.stats.saved(label, data.byteLength, ctx.vault.size(found.path) ?? data.byteLength, `→ ${found.path}: ${REUSED}`);
     return found.path;

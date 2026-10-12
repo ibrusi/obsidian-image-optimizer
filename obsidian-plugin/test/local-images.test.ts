@@ -3,10 +3,10 @@ import { test } from 'node:test';
 import type { Converted } from '../src/services/converter.ts';
 import { LocalImages, type LocalContext } from '../src/services/local-images.ts';
 import { RunStats } from '../src/services/stats.ts';
-import { FakeLinks, FakeMetadata, memoryLibrary, MemoryVault, tagFor } from './fakes.ts';
+import { FakeLinks, FakeMetadata, memoryLibrary, MemoryVault, tagFor, testPng, testWebp } from './fakes.ts';
 
-const PNG = () => Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Array(992).fill(7)]).buffer;
-const WEBP = new Uint8Array(100).buffer;
+const PNG = () => testPng(32, 24, 7);
+const WEBP = testWebp(32, 24);
 const TAG = await tagFor(PNG());
 
 function setup(files: Record<string, ArrayBuffer | string>, overrides: Partial<LocalContext> = {}) {
@@ -124,7 +124,7 @@ test('a copy of an image converted before reuses its WebP', async () => {
     'two/copy.png': PNG(),
   });
   let encodes = 0;
-  ctx.convert = async () => ({ data: new Uint8Array(100 + ++encodes).buffer, ext: 'webp', replaced: true, detail: 'ok' });
+  ctx.convert = async () => ({ data: testWebp(32, 24, 100 + ++encodes), ext: 'webp', replaced: true, detail: 'ok' });
   await local.processNote('a.md');
   await local.processNote('b.md');
   assert.equal(vault.text('b.md'), `![[one/photo-${TAG}.webp]]`);

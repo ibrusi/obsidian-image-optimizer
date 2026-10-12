@@ -153,3 +153,23 @@ export function memoryLibrary(vault: VaultPort, reuse = true): ImageLibrary {
 export async function tagFor(original: ArrayBuffer): Promise<string> {
   return tagOfFingerprint(await fingerprint(original));
 }
+
+/** A PNG header for width × height, padded with fill to size bytes. */
+export function testPng(width: number, height: number, fill: number, size = 1000): ArrayBuffer {
+  const bytes = new Uint8Array(size).fill(fill);
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  new DataView(bytes.buffer).setUint32(16, width);
+  new DataView(bytes.buffer).setUint32(20, height);
+  return bytes.buffer;
+}
+
+/** An extended (VP8X) WebP header for width × height, padded to size bytes. */
+export function testWebp(width: number, height: number, size = 100): ArrayBuffer {
+  const bytes = new Uint8Array(Math.max(size, 30));
+  bytes.set([...'RIFF'].map((c) => c.charCodeAt(0)), 0);
+  bytes.set([...'WEBPVP8X'].map((c) => c.charCodeAt(0)), 8);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(24, (width - 1) & 0xffffff, true);
+  view.setUint32(26, (view.getUint32(26, true) & 0xff) | (((height - 1) & 0xffffff) << 8), true);
+  return bytes.buffer;
+}

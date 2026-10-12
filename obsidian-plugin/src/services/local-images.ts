@@ -108,7 +108,7 @@ export class LocalImages {
     const { vault, library, stats, signal } = this.ctx;
     // Only a WebP replaces the original: the tag also matches the original
     // itself when it was pasted unconverted, or an unconverted copy of it.
-    const found = await library.find(data, (path) => path !== original && extension(path) === 'webp');
+    const found = await library.find(data, type, (path) => path !== original && extension(path) === 'webp');
     if (found.path) return { path: found.path, created: false, size: vault.size(found.path) ?? data.byteLength, detail: REUSED };
 
     const converted = await this.ctx.convert(data, type, signal);

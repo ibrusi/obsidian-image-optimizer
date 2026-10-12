@@ -69,7 +69,7 @@ export async function saveNew(vault: VaultPort, folder: string, stem: string, ex
   throw new Error(`could not find a free name for ${stem}.${ext} in "${folder || '/'}"`);
 }
 
-function sameBytes(a: ArrayBuffer, b: ArrayBuffer): boolean {
+export function sameBytes(a: ArrayBuffer, b: ArrayBuffer): boolean {
   if (a.byteLength !== b.byteLength) return false;
   const x = new Uint8Array(a);
   const y = new Uint8Array(b);

@@ -4,11 +4,11 @@ import type { ImageType } from '../src/domain/sniff.ts';
 import type { Converted } from '../src/services/converter.ts';
 import { processRemoteImages, type RemoteContext } from '../src/services/remote-images.ts';
 import { RunStats } from '../src/services/stats.ts';
-import { FakeHttp, FakeLinks, memoryLibrary, MemoryVault, tagFor } from './fakes.ts';
+import { FakeHttp, FakeLinks, memoryLibrary, MemoryVault, tagFor, testPng, testWebp } from './fakes.ts';
 
-const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Array(992).fill(1)]).buffer;
+const PNG = testPng(32, 24, 1);
 const HTML = new TextEncoder().encode('<!doctype html><title>Hotlinking denied</title>').buffer as ArrayBuffer;
-const WEBP = new Uint8Array(100).buffer;
+const WEBP = testWebp(32, 24);
 const A = `a-${await tagFor(PNG)}.webp`;
 
 function context(vault: MemoryVault, http: FakeHttp, overrides: Partial<RemoteContext> = {}): RemoteContext {
@@ -133,7 +133,7 @@ test('the same image added again after the encoding changed reuses the first fil
   const library = memoryLibrary(vault);
   let encodes = 0;
   // Each encoding gives different bytes, as after a change of settings.
-  const convert = async (): Promise<Converted> => ({ data: new Uint8Array(50 + ++encodes).buffer, ext: 'webp', replaced: true, detail: 'ok' });
+  const convert = async (): Promise<Converted> => ({ data: testWebp(32, 24, 50 + ++encodes), ext: 'webp', replaced: true, detail: 'ok' });
   await processRemoteImages('a.md', context(vault, http, { library, convert }));
   const ctx = context(vault, http, { library, convert });
   await processRemoteImages('b.md', ctx);
@@ -154,7 +154,7 @@ test('with reuse off the same image is saved again', async () => {
 
 test('another device finds a file synced from the first one by its name alone', async () => {
   // The first device saved the image; only the vault itself was synced.
-  const vault = new MemoryVault({ 'b.md': '![](https://x.test/a.png)', [`Attachments/${A}`]: new Uint8Array(77).buffer });
+  const vault = new MemoryVault({ 'b.md': '![](https://x.test/a.png)', [`Attachments/${A}`]: testWebp(32, 24, 77) });
   const http = new FakeHttp({ 'https://x.test/a.png': { status: 200, body: PNG } });
   let encodes = 0;
   const ctx = context(vault, http, { convert: async () => { encodes++; return { data: WEBP, ext: 'webp', replaced: true, detail: 'ok' }; } });
@@ -162,4 +162,12 @@ test('another device finds a file synced from the first one by its name alone', 
   assert.equal(vault.text('b.md'), `![[Attachments/${A}]]`);
   assert.equal(encodes, 0);
   assert.equal([...vault.files.keys()].filter((p) => p.endsWith('.webp')).length, 1);
+});
+
+test('a file with the tag but another size is a collision and is not reused', async () => {
+  const vault = new MemoryVault({ 'b.md': '![](https://x.test/a.png)', [`Attachments/${A}`]: testWebp(640, 480) });
+  const http = new FakeHttp({ 'https://x.test/a.png': { status: 200, body: PNG } });
+  await processRemoteImages('b.md', context(vault, http));
+  assert.equal(vault.text('b.md'), `![[Attachments/${A.replace('.webp', '-1.webp')}]]`);
+  assert.equal(vault.files.size, 3, 'the other image is untouched');
 });

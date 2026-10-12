@@ -95,7 +95,7 @@ const en = {
     },
     reuseIdentical: {
       name: 'Reuse identical files',
-      desc: 'Saved files get a short fingerprint of the original in their name (photo-3fa9c2e1b7d0.webp). An image added ' +
+      desc: 'Saved files get a short fingerprint of the original in their name (photo-3fa9c2e1b7d04a85.webp). An image added ' +
         'again — in another note, pasted twice, or on another device after sync — is linked to that file, even after the ' +
         'settings changed. Off: no fingerprint, every image is saved as a new file. Existing files are never changed.',
     },
@@ -199,7 +199,7 @@ const ru: Strings = {
     },
     reuseIdentical: {
       name: 'Не сохранять одинаковые файлы',
-      desc: 'В имя сохранённого файла добавляется короткий отпечаток оригинала (photo-3fa9c2e1b7d0.webp). Картинка, ' +
+      desc: 'В имя сохранённого файла добавляется короткий отпечаток оригинала (photo-3fa9c2e1b7d04a85.webp). Картинка, ' +
         'добавленная повторно — в другой заметке, вставленная дважды или на другом устройстве после синхронизации, — ' +
         'ссылается на этот файл, даже если настройки менялись. Выкл.: без отпечатка, каждая картинка сохраняется новым ' +
         'файлом. Существующие файлы никогда не изменяются.',

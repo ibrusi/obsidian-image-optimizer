@@ -80,7 +80,7 @@ interface Saved {
 
 // saveImage finds the image in the vault, or converts and saves it.
 async function saveImage(data: ArrayBuffer, type: ImageType, url: string, noteDir: string, ctx: RemoteContext): Promise<Saved> {
-  const found = await ctx.library.find(data);
+  const found = await ctx.library.find(data, type);
   if (found.path) {
     return { path: found.path, created: false, size: ctx.vault.size(found.path) ?? data.byteLength, detail: REUSED };
   }

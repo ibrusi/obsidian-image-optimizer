@@ -1,5 +1,6 @@
 import { findLocalLinks, replaceLocalLinks, type LocalLink } from '../domain/local-links.ts';
 import { imageTypeOf, type ImageType } from '../domain/sniff.ts';
+import type { PluginSettings } from '../settings.ts';
 import type { Converted } from './converter.ts';
 import type { LinkPort, MetadataPort, VaultPort } from './ports.ts';
 import type { RunStats } from './stats.ts';
@@ -12,6 +13,7 @@ export interface LocalContext {
   links: LinkPort;
   metadata: MetadataPort;
   convert(data: ArrayBuffer, type: ImageType, signal?: AbortSignal): Promise<Converted>;
+  settings: Pick<PluginSettings, 'reuseIdentical'>;
   stats: RunStats;
   /** Saves open editors of a note before the plugin rewrites it on disk. */
   flush(notePath: string): Promise<void>;
@@ -76,7 +78,7 @@ export class LocalImages {
     const folder = slash === -1 ? '' : original.slice(0, slash);
     const name = original.slice(slash + 1);
     const stem = name.slice(0, name.lastIndexOf('.')) || name;
-    const { path: webp, created } = await store(vault, folder, stem, 'webp', converted.data);
+    const { path: webp, created } = await store(vault, folder, stem, 'webp', converted.data, this.ctx.settings.reuseIdentical);
 
     // Every note that links to the original, the processed one included:
     // after this, no note should point at the original any more.

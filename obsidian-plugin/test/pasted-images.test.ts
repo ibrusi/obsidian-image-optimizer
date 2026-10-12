@@ -13,7 +13,7 @@ test('a pasted screenshot is saved as WebP into the folder of the note', async (
   const path = await savePastedImage(PNG, 'image.png', 'notes/a.md', {
     vault,
     convert: async (): Promise<Converted> => ({ data: new ArrayBuffer(10), ext: 'webp', replaced: true, detail: 'ok' }),
-    settings: { folder: 'Attachments' },
+    settings: { folder: 'Attachments', reuseIdentical: true },
     stats: new RunStats(),
   }, now);
   assert.equal(path, 'notes/Attachments/Pasted image 20261011153005.webp');
@@ -25,7 +25,7 @@ test('a failure while converting saves the original instead of losing the image'
   const path = await savePastedImage(PNG, 'diagram.png', 'a.md', {
     vault,
     convert: async () => { throw new Error('out of memory'); },
-    settings: { folder: '/' },
+    settings: { folder: '/', reuseIdentical: true },
     stats,
   }, now);
   assert.equal(path, 'diagram.png');
@@ -36,7 +36,7 @@ test('a failure while converting saves the original instead of losing the image'
 test('non-images are not handled', async () => {
   const vault = new MemoryVault();
   const path = await savePastedImage(new TextEncoder().encode('%PDF-1.7 ......').buffer as ArrayBuffer, 'doc.pdf', 'a.md', {
-    vault, convert: async () => { throw new Error('unreachable'); }, settings: { folder: '' }, stats: new RunStats(),
+    vault, convert: async () => { throw new Error('unreachable'); }, settings: { folder: '', reuseIdentical: true }, stats: new RunStats(),
   });
   assert.equal(path, null);
   assert.equal(vault.files.size, 0);

@@ -32,14 +32,19 @@ test('store reuses a byte-identical file of the same name family', async () => {
     'img/pic-1.webp': bytes('same image'),
     'img/picture.webp': bytes('same image'),
   });
-  assert.deepEqual(await store(vault, 'img', 'pic', 'webp', bytes('same image')), { path: 'img/pic-1.webp', created: false });
+  assert.deepEqual(await store(vault, 'img', 'pic', 'webp', bytes('same image'), true), { path: 'img/pic-1.webp', created: false });
   assert.equal(vault.files.size, 3, 'nothing written');
 });
 
 test('store writes a new file when only the name or only the size matches', async () => {
   const vault = new MemoryVault({ 'img/pic.webp': bytes('aaaa'), 'img/pic.png': bytes('bbbb') });
-  assert.deepEqual(await store(vault, 'img', 'pic', 'webp', bytes('abcd')), { path: 'img/pic-1.webp', created: true });
+  assert.deepEqual(await store(vault, 'img', 'pic', 'webp', bytes('abcd'), true), { path: 'img/pic-1.webp', created: true });
   assert.equal(new TextDecoder().decode(await vault.readBinary('img/pic.webp')), 'aaaa', 'same size, different bytes: untouched');
-  assert.deepEqual(await store(vault, 'img', 'pic', 'webp', bytes('bbbb')), { path: 'img/pic-2.webp', created: true },
+  assert.deepEqual(await store(vault, 'img', 'pic', 'webp', bytes('bbbb'), true), { path: 'img/pic-2.webp', created: true },
     'another extension is not the same file');
+});
+
+test('store always writes a new file when reuse is off', async () => {
+  const vault = new MemoryVault({ 'img/pic.webp': bytes('same image') });
+  assert.deepEqual(await store(vault, 'img', 'pic', 'webp', bytes('same image'), false), { path: 'img/pic-1.webp', created: true });
 });

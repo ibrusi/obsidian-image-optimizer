@@ -16,6 +16,7 @@ function setup(files: Record<string, ArrayBuffer | string>, overrides: Partial<L
     links: new FakeLinks(),
     metadata: new FakeMetadata(vault),
     convert: async (): Promise<Converted> => ({ data: WEBP, ext: 'webp', replaced: true, detail: 'ok' }),
+    settings: { reuseIdentical: true },
     stats: new RunStats(),
     flush: async (path) => { flushed.push(path); },
     ignoredFiles: new Set(['image-optimizer-log.md']),

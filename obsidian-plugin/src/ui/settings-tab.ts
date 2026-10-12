@@ -76,6 +76,9 @@ export class ImageOptimizerSettingTab extends PluginSettingTab {
       'convertLocal');
     this.toggle(containerEl, 'Convert on paste and drop',
       'Pasted or dropped images, and web images in pasted text, are converted right away.', 'autoOnPaste');
+    this.toggle(containerEl, 'Reuse identical files',
+      'If a file of the same name (pic.webp, pic-1.webp, …) in the target folder holds exactly the same bytes, ' +
+      'link to it instead of saving a copy. Existing files are never changed.', 'reuseIdentical');
 
     new Setting(containerEl).setName('Limits').setHeading();
     this.number(containerEl, 'Maximum download, MB', 'Larger downloads are refused.', 'maxDownloadMB');

@@ -10,7 +10,7 @@ import { store } from './storage.ts';
 export interface PasteContext {
   vault: VaultPort;
   convert(data: ArrayBuffer, type: ImageType, signal?: AbortSignal): Promise<Converted>;
-  settings: Pick<PluginSettings, 'folder'>;
+  settings: Pick<PluginSettings, 'folder' | 'reuseIdentical'>;
   stats: RunStats;
   signal?: AbortSignal;
 }
@@ -36,7 +36,7 @@ export async function savePastedImage(
     converted = { data, ext: extensionOf(type), replaced: false, detail: 'saved unconverted' };
   }
   const noteDir = notePath.includes('/') ? notePath.slice(0, notePath.lastIndexOf('/')) : '/';
-  const { path, created } = await store(ctx.vault, resolveFolder(ctx.settings.folder, noteDir), pastedImageStem(fileName, now), converted.ext, converted.data);
+  const { path, created } = await store(ctx.vault, resolveFolder(ctx.settings.folder, noteDir), pastedImageStem(fileName, now), converted.ext, converted.data, ctx.settings.reuseIdentical);
   ctx.stats.saved(fileName || 'pasted image', data.byteLength, converted.data.byteLength,
     `→ ${path}${created ? '' : ' (identical file already in the vault, reused)'}: ${converted.detail}`);
   return path;

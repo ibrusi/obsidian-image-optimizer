@@ -15,7 +15,7 @@ function context(vault: MemoryVault, http: FakeHttp, signal?: AbortSignal) {
     metadata: new FakeMetadata(vault),
     http,
     convert: async (): Promise<Converted> => ({ data: WEBP, ext: 'webp', replaced: true, detail: 'ok' }),
-    settings: { folder: 'Attachments', maxDownloadMB: 30, allowPrivateHosts: false },
+    settings: { folder: 'Attachments', maxDownloadMB: 30, allowPrivateHosts: false, reuseIdentical: true },
     stats: new RunStats(),
     flush: async () => {},
     ignoredFiles: new Set<string>(),

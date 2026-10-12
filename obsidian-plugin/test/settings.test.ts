@@ -29,3 +29,9 @@ test('settings of the Go-backed 1.x plugin are migrated where they still apply',
   assert.equal(s.allowPrivateHosts, true);
   assert.ok(!('binaryPath' in s));
 });
+
+test('reuseIdentical is on by default and can be turned off', () => {
+  assert.equal(normalizeSettings({}).reuseIdentical, true);
+  assert.equal(normalizeSettings({ reuseIdentical: false }).reuseIdentical, false);
+  assert.equal(normalizeSettings({ reuseIdentical: 'no' }).reuseIdentical, true, 'junk falls back to the default');
+});

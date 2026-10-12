@@ -16,6 +16,8 @@ export interface PluginSettings {
   convertLocal: boolean;
   /** Convert images pasted or dropped into a note, and remote images in pasted text. */
   autoOnPaste: boolean;
+  /** Link a byte-identical file of the same name instead of saving a copy. */
+  reuseIdentical: boolean;
   maxDownloadMB: number;
   /** Decoded size limit; for GIFs width × height × frames. */
   maxMegapixels: number;
@@ -32,6 +34,7 @@ export const DEFAULT_SETTINGS: Readonly<PluginSettings> = Object.freeze({
   gifMode: 'animated-webp',
   convertLocal: true,
   autoOnPaste: true,
+  reuseIdentical: true,
   maxDownloadMB: 30,
   maxMegapixels: 50,
   allowPrivateHosts: false,
@@ -65,6 +68,7 @@ export function normalizeSettings(raw: unknown): PluginSettings {
     gifMode: data.gifMode === 'keep' ? 'keep' : 'animated-webp',
     convertLocal: bool(data.convertLocal, DEFAULT_SETTINGS.convertLocal),
     autoOnPaste: bool(data.autoOnPaste, DEFAULT_SETTINGS.autoOnPaste),
+    reuseIdentical: bool(data.reuseIdentical, DEFAULT_SETTINGS.reuseIdentical),
     maxDownloadMB: clampInt(data.maxDownloadMB, 'maxDownloadMB'),
     maxMegapixels: clampInt(data.maxMegapixels, 'maxMegapixels'),
     allowPrivateHosts: bool(data.allowPrivateHosts, DEFAULT_SETTINGS.allowPrivateHosts),

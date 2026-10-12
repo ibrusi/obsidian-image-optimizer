@@ -14,9 +14,17 @@ export interface Stored {
 // a free name. Existing files are never overwritten or changed.
 //
 // Only a file with created=true belongs to the caller: a reused file may be
-// linked from other notes and must never be removed by the caller.
-export async function store(vault: VaultPort, folder: string, stem: string, ext: string, data: ArrayBuffer): Promise<Stored> {
-  const existing = await findIdentical(vault, folder, stem, ext, data);
+// linked from other notes and must never be removed by the caller. With
+// reuseIdentical=false a new file is always written.
+export async function store(
+  vault: VaultPort,
+  folder: string,
+  stem: string,
+  ext: string,
+  data: ArrayBuffer,
+  reuseIdentical: boolean,
+): Promise<Stored> {
+  const existing = reuseIdentical ? await findIdentical(vault, folder, stem, ext, data) : null;
   if (existing) return { path: existing, created: false };
   return { path: await saveNew(vault, folder, stem, ext, data), created: true };
 }

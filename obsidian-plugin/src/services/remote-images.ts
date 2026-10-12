@@ -14,7 +14,7 @@ export interface RemoteContext {
   links: LinkPort;
   http: HttpPort;
   convert(data: ArrayBuffer, type: ImageType, signal?: AbortSignal): Promise<Converted>;
-  settings: Pick<PluginSettings, 'folder' | 'maxDownloadMB' | 'allowPrivateHosts'>;
+  settings: Pick<PluginSettings, 'folder' | 'maxDownloadMB' | 'allowPrivateHosts' | 'reuseIdentical'>;
   stats: RunStats;
   signal?: AbortSignal;
 }
@@ -53,7 +53,7 @@ async function processOne(notePath: string, noteDir: string, url: string, ctx: R
   ctx.signal?.throwIfAborted();
 
   const folder = resolveFolder(ctx.settings.folder, noteDir);
-  const { path, created } = await store(ctx.vault, folder, baseNameFromUrl(url), converted.ext, converted.data);
+  const { path, created } = await store(ctx.vault, folder, baseNameFromUrl(url), converted.ext, converted.data, ctx.settings.reuseIdentical);
 
   let rewritten = 0;
   // process() re-reads the note: edits made during the download are kept.

@@ -1,0 +1,80 @@
+name: Plugin release
+
+# Publishes the Obsidian plugin once per manifest version: bump the version in
+# manifest.json and package.json to publish. Versions with a suffix
+# (2.0.0-beta.1) become pre-releases, installable with BRAT.
+on:
+  push:
+    branches: [main, feat/webp-plugin]
+    paths: [obsidian-plugin/**, .github/workflows/plugin-release.yml]
+  workflow_dispatch:
+
+concurrency:
+  group: plugin-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: obsidian-plugin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: obsidian-plugin/package-lock.json
+
+      - name: Read the version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p "require('./manifest.json').version")
+          if [ "$version" != "$(node -p "require('./package.json').version")" ]; then
+            echo "manifest.json and package.json versions differ"; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          case "$version" in *-*) echo "prerelease=--prerelease" >> "$GITHUB_OUTPUT" ;; esac
+          if gh release view "$version" >/dev/null 2>&1; then
+            echo "Release $version already exists; bump the version to publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.version.outputs.publish == 'true'
+        run: npm ci
+      - if: steps.version.outputs.publish == 'true'
+        run: npm run typecheck
+      - if: steps.version.outputs.publish == 'true'
+        run: npm test
+      - if: steps.version.outputs.publish == 'true'
+        run: npm run build
+
+      - name: Package
+        if: steps.version.outputs.publish == 'true'
+        run: |
+          mkdir -p dist/obsidian-image-optimizer
+          cp main.js manifest.json dist/obsidian-image-optimizer/
+          (cd dist && zip -r obsidian-image-optimizer.zip obsidian-image-optimizer)
+
+      - name: Publish release
+        if: steps.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          gh release create "$VERSION" \
+            main.js manifest.json dist/obsidian-image-optimizer.zip \
+            $PRERELEASE \
+            --target "$GITHUB_SHA" \
+            --title "Image Optimizer $VERSION" \
+            --notes "Obsidian plugin that converts images to WebP on desktop and mobile. Installation: README.md, section \"Obsidian plugin\"."

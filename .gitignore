@@ -1,18 +1,3 @@
-# Binaries
-bin/
-/obsidian-img-opt
-/obsidian-image-optimizer
-/test-build
-*.exe
-*.dll
-*.so
-*.dylib
-
-# Test artifacts
-*.test
-*.out
-*.prof
-
 # OS / Editor files
 # (no trailing slash: must also match non-directory entries, e.g. mount stubs)
 .DS_Store
@@ -30,7 +15,3 @@ bin/
 /.ripgreprc
 /.mcp.json
 /.claude/
-
-# Optimization artifacts & caches
-attachments/
-.originals_backup/

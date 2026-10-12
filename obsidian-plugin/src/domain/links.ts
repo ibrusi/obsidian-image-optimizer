@@ -25,7 +25,7 @@ export function findRemoteImages(text: string): RemoteImage[] {
     if (isIgnored(i) || (i > 0 && text[i - 1] === '\\')) continue;
     const image = parseEmbed(text, i);
     if (image) {
-      images.push(image);
+      if (!isWebEmbed(image.url)) images.push(image);
       i = image.end - 1;
     }
   }
@@ -38,6 +38,23 @@ export function findRemoteImages(text: string): RemoteImage[] {
   images.sort((a, b) => a.start - b.start);
   // An <img> written inside the alt text of a Markdown embed is not an embed.
   return images.filter((image, i) => i === 0 || image.start >= images[i - 1].end);
+}
+
+// isWebEmbed tells a Markdown embed that Obsidian shows as a video or a post
+// rather than an image: a YouTube video or a tweet. Downloading one only
+// fetches a web page.
+export function isWebEmbed(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  const host = parsed.hostname.toLowerCase().replace(/^(?:www|m|mobile)\./, '');
+  if (host === 'youtu.be') return true;
+  if (host === 'youtube.com' || host === 'youtube-nocookie.com') return /^\/(?:watch|shorts\/|embed\/|live\/)/.test(parsed.pathname);
+  if (host === 'twitter.com' || host === 'x.com') return /\/status\/\d+/.test(parsed.pathname);
+  return false;
 }
 
 // replaceImages rewrites embeds: replace returns the new text for an embed,

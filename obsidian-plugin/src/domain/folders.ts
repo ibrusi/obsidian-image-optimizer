@@ -44,3 +44,10 @@ export function resolveFolder(setting: string, noteDir: string): string {
 export function joinPath(folder: string, name: string): string {
   return folder ? `${folder}/${name}` : name;
 }
+
+// isInFolder tells whether a vault path lies in folder or any folder below
+// it. folder is TFolder.path: "/" (or "") for the root, which holds everything.
+export function isInFolder(path: string, folder: string): boolean {
+  const base = folder.replace(/^\/+|\/+$/g, '');
+  return base === '' || path.startsWith(`${base}/`);
+}

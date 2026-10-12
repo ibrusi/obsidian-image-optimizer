@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { joinPath, normalizeFolder, resolveFolder, validateFolder } from '../src/domain/folders.ts';
+import { isInFolder, joinPath, normalizeFolder, resolveFolder, validateFolder } from '../src/domain/folders.ts';
 
 test('normalizeFolder', () => {
   assert.equal(normalizeFolder(' Attachments/ '), 'Attachments');
@@ -35,4 +35,14 @@ test('resolveFolder', () => {
 test('joinPath', () => {
   assert.equal(joinPath('', 'a.webp'), 'a.webp');
   assert.equal(joinPath('x/y', 'a.webp'), 'x/y/a.webp');
+});
+
+test('isInFolder', () => {
+  assert.equal(isInFolder('note.md', '/'), true);
+  assert.equal(isInFolder('a/b/note.md', ''), true);
+  assert.equal(isInFolder('a/note.md', 'a'), true);
+  assert.equal(isInFolder('a/b/note.md', 'a'), true, 'subfolders are included');
+  assert.equal(isInFolder('ab/note.md', 'a'), false, 'a sibling with the same prefix is not');
+  assert.equal(isInFolder('a.md', 'a'), false);
+  assert.equal(isInFolder('note.md', 'a'), false);
 });

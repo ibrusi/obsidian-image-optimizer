@@ -2,7 +2,7 @@ import { type App, Modal, Setting } from 'obsidian';
 import type { Strings } from '../i18n.ts';
 import type { Progress } from '../services/vault-run.ts';
 
-// ProgressModal shows a vault run and lets the user stop it. Closing the
+// ProgressModal shows a vault or folder run and lets the user stop it. Closing the
 // window also stops the run: nothing keeps working out of sight.
 export class ProgressModal extends Modal {
   private readonly onCancel: () => void;
@@ -12,11 +12,11 @@ export class ProgressModal extends Modal {
   private readonly detail: HTMLElement;
   private finished = false;
 
-  constructor(app: App, strings: Strings, onCancel: () => void) {
+  constructor(app: App, strings: Strings, title: string, onCancel: () => void) {
     super(app);
     this.onCancel = onCancel;
     this.strings = strings;
-    this.setTitle(strings.progress.title);
+    this.setTitle(title);
     this.bar = this.contentEl.createEl('progress', { attr: { max: '1', value: '0' } });
     this.bar.style.width = '100%';
     this.status = this.contentEl.createDiv();

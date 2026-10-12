@@ -1,7 +1,8 @@
-import { type Command, getLanguage, MarkdownView, Notice, Plugin, TFile } from 'obsidian';
+import { type Command, getLanguage, MarkdownView, Notice, Plugin, TFile, TFolder } from 'obsidian';
 import { WASM } from './codec/assets.ts';
 import { type Codec, createCodec } from './codec/codec.ts';
 import { decode } from './codec/decode.ts';
+import { isInFolder } from './domain/folders.ts';
 import { resolveLanguage, type Strings, stringsFor } from './i18n.ts';
 import { LOG_PATH, RunLog } from './log.ts';
 import { convert, type ConvertDeps } from './services/converter.ts';
@@ -48,9 +49,18 @@ export default class ImageOptimizerPlugin extends Plugin {
         return true;
       },
     });
+    this.command('optimizeFolder', {
+      id: 'optimize-folder',
+      checkCallback: (checking) => {
+        const folder = this.app.workspace.getActiveFile()?.parent;
+        if (!folder) return false;
+        if (!checking) void this.enqueue((signal) => this.optimizeFolder(folder, signal));
+        return true;
+      },
+    });
     this.command('optimizeVault', {
       id: 'optimize-vault',
-      callback: () => void this.enqueue((signal) => this.optimizeVault(signal)),
+      callback: () => void this.enqueue((signal) => this.optimizeFolder(this.app.vault.getRoot(), signal)),
     });
     this.command('stop', {
       id: 'stop',
@@ -61,6 +71,13 @@ export default class ImageOptimizerPlugin extends Plugin {
       },
     });
 
+    this.registerEvent(this.app.workspace.on('file-menu', (menu, file) => {
+      if (!(file instanceof TFolder)) return;
+      menu.addItem((item) => item
+        .setTitle(this.strings.menu.optimizeFolder)
+        .setIcon('image')
+        .onClick(() => void this.enqueue((signal) => this.optimizeFolder(file, signal))));
+    }));
     this.registerEvent(this.app.workspace.on('editor-paste', (evt, editor, info) => handlePaste(evt, editor, info, this.pasteActions)));
     this.registerEvent(this.app.workspace.on('editor-drop', (evt, editor, info) => handleDrop(evt, editor, info, this.pasteActions)));
   }
@@ -103,17 +120,19 @@ export default class ImageOptimizerPlugin extends Plugin {
     }
   }
 
-  // optimizeVault processes every note, with a progress window that can stop it.
-  private async optimizeVault(signal: AbortSignal): Promise<void> {
+  // optimizeFolder processes every note in the folder and its subfolders, the
+  // whole vault for the root, with a progress window that can stop it.
+  private async optimizeFolder(folder: TFolder, signal: AbortSignal): Promise<void> {
     const notes = this.app.vault.getMarkdownFiles()
       .map((file) => file.path)
-      .filter((path) => path !== LOG_PATH)
+      .filter((path) => path !== LOG_PATH && isInFolder(path, folder.path))
       .sort((a, b) => a.localeCompare(b));
+    const title = folder.isRoot() ? this.strings.progress.title : this.strings.progress.folderTitle(folder.path);
     const run = this.newRun();
     // The window's Stop button and the "Stop" command both end the run.
     const stop = new AbortController();
     signal.addEventListener('abort', () => stop.abort(signal.reason), { once: true });
-    const modal = new ProgressModal(this.app, this.strings, () => stop.abort(new DOMException('Cancelled', 'AbortError')));
+    const modal = new ProgressModal(this.app, this.strings, title, () => stop.abort(new DOMException('Cancelled', 'AbortError')));
     modal.open();
     try {
       const ctx = await this.context(run, stop.signal);
@@ -123,7 +142,7 @@ export default class ImageOptimizerPlugin extends Plugin {
       });
     } finally {
       modal.finish();
-      await this.report(run, 'vault', `${stop.signal.aborted ? this.strings.notices.stopped : ''}${run.stats.summary(this.strings)}`);
+      await this.report(run, folder.isRoot() ? 'vault' : `folder: ${folder.path}`, `${stop.signal.aborted ? this.strings.notices.stopped : ''}${run.stats.summary(this.strings)}`);
     }
   }
 

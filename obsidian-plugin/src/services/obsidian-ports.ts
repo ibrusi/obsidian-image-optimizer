@@ -116,7 +116,9 @@ export class ObsidianMetadata implements MetadataPort {
 export class ObsidianHttp implements HttpPort {
   async get(url: string, headers?: Record<string, string>) {
     const response = await requestUrl({ url, method: 'GET', headers, throw: false });
-    return { status: response.status, body: response.arrayBuffer };
+    const received: Record<string, string> = {};
+    for (const [name, value] of Object.entries(response.headers ?? {})) received[name.toLowerCase()] = value;
+    return { status: response.status, body: response.arrayBuffer, headers: received };
   }
 }
 

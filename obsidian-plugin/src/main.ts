@@ -1,4 +1,4 @@
-import { type Command, getLanguage, MarkdownView, Notice, Plugin, TFile, TFolder } from 'obsidian';
+import { apiVersion, type Command, getLanguage, MarkdownView, Notice, Platform, Plugin, TFile, TFolder } from 'obsidian';
 import { WASM } from './codec/assets.ts';
 import { type Codec, createCodec } from './codec/codec.ts';
 import { decode } from './codec/decode.ts';
@@ -217,6 +217,7 @@ export default class ImageOptimizerPlugin extends Plugin {
 
   private async context(run: Run, signal?: AbortSignal): Promise<RunContext> {
     const codec = await this.getCodec();
+    run.log.add(`plugin ${this.manifest.version}, Obsidian ${apiVersion}, ${platformName()}`);
     run.log.add(`encoder: ${codec.mode}, ${codec.variant}${this.codecFallback ? ` (${this.codecFallback})` : ''}`);
     const deps: ConvertDeps = {
       decode,
@@ -291,4 +292,15 @@ function isAbort(error: unknown): boolean {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+// platformName names the device for the log: sites answer phones and
+// computers differently.
+function platformName(): string {
+  if (Platform.isIosApp) return 'iOS';
+  if (Platform.isAndroidApp) return 'Android';
+  if (Platform.isMacOS) return 'macOS';
+  if (Platform.isWin) return 'Windows';
+  if (Platform.isLinux) return 'Linux';
+  return Platform.isMobile ? 'mobile' : 'desktop';
 }

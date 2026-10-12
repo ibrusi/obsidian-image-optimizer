@@ -20,7 +20,8 @@ export class RunLog {
 
   async flush(title: string): Promise<void> {
     if (this.lines.length === 0) return;
-    const block = `\n## ${new Date().toISOString()} — ${title}\n\n${this.lines.map((l) => `- ${l}`).join('\n')}\n`;
+    const items = this.lines.map((l) => (l.startsWith('  ') ? `  - ${l.trimStart()}` : `- ${l}`));
+    const block = `\n## ${new Date().toISOString()} — ${title}\n\n${items.join('\n')}\n`;
     this.lines.length = 0;
     const path = normalizePath(LOG_PATH);
     const existing = this.vault.getAbstractFileByPath(path);

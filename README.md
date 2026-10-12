@@ -54,7 +54,7 @@ With **Convert on paste and drop** enabled (default), pasted and dropped images 
 | Maximum download, MB | `30` | Larger downloads are refused. |
 | Maximum image size, megapixels | `50` | Larger images are kept as they are (for animations: width × height × frames), to protect memory on phones. |
 | Allow private network addresses | off | By default links to `localhost`, `*.local` and private, loopback and link-local IP addresses are refused, so a note from an untrusted source cannot probe your network. |
-| Write a log note | off | Appends details of every run to `image-optimizer-log.md` (in English, for troubleshooting). |
+| Write a log note | off | Appends details of every run to `image-optimizer-log.md` (in English, for troubleshooting): plugin and Obsidian version, platform, each note with its images, and for a failed download every request with what was sent and what the site answered (status, server headers, the start of an error page). |
 
 Plugin settings are stored in `.obsidian/plugins/obsidian-image-optimizer/data.json`; if your sync does not copy `.obsidian/plugins`, set them on every device.
 

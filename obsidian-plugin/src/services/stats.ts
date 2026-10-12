@@ -1,6 +1,9 @@
 import type { Strings } from '../i18n.ts';
 import { formatBytes } from './converter.ts';
 
+/** Prefix of a line that details the line before it; the log nests it. */
+export const DETAIL = '  ';
+
 // RunStats collects the outcome of one run for the summary notice and the
 // optional log note.
 export class RunStats {
@@ -27,6 +30,7 @@ export class RunStats {
   error(label: string, error: unknown): void {
     this.failed++;
     this.lines.push(`failed ${label}: ${error instanceof Error ? error.message : String(error)}`);
+    for (const detail of detailsOf(error)) this.lines.push(`${DETAIL}${detail}`);
   }
 
   get total(): number {
@@ -43,4 +47,12 @@ export class RunStats {
       after: bytes ? formatBytes(this.bytesAfter) : '',
     });
   }
+}
+
+// detailsOf returns the extra lines an error carries for the log, such as the
+// requests of a failed download.
+function detailsOf(error: unknown): readonly string[] {
+  if (typeof error !== 'object' || error === null || !('details' in error)) return [];
+  const details = (error as { details: unknown }).details;
+  return Array.isArray(details) ? details.filter((d): d is string => typeof d === 'string') : [];
 }

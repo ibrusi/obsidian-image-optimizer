@@ -40,6 +40,8 @@ export interface LinkPort {
 export interface HttpResponse {
   status: number;
   body: ArrayBuffer;
+  /** Response headers, names in lower case, when the platform reports them. */
+  headers?: Record<string, string>;
 }
 
 export interface HttpPort {

@@ -252,3 +252,29 @@ test('a .webp the site does not give is never replaced by a local file with the 
   assert.equal(vault.text('n.md'), '![](https://x.test/pic1.webp)');
   assert.equal(ctx.stats.failed, 1);
 });
+
+test('a failed download logs every request with its answer', async () => {
+  const vault = new MemoryVault({ 'n.md': '---\nsource: https://x.test/post\n---\n![](https://static.x.test/11.webp)' });
+  const page = new TextEncoder().encode('<html><head><style>p{}</style></head><body><h1>403 Forbidden</h1><p>nginx</p></body></html>').buffer as ArrayBuffer;
+  const http = new FakeHttp({
+    'https://static.x.test/11.webp': { status: 403, body: page, headers: { 'content-type': 'text/html', server: 'nginx', 'set-cookie': 'secret=1' } },
+  });
+  const ctx = context(vault, http);
+  await processRemoteImages('n.md', ctx);
+  const at = ctx.stats.lines.indexOf('failed https://static.x.test/11.webp: HTTP 403');
+  assert.ok(at >= 0, ctx.stats.lines.join('\n'));
+  const detail = ctx.stats.lines[at + 1];
+  assert.ok(detail.startsWith('  GET https://static.x.test/11.webp (Referer https://x.test/post) → 403 in '), detail);
+  assert.match(detail, /content-type: text\/html; server: nginx; \d+ bytes; body: "403 Forbidden nginx"$/);
+  assert.doesNotMatch(detail, /secret/, 'cookies are not logged');
+});
+
+test('a 404 .webp logs the original it tried as well', async () => {
+  const vault = new MemoryVault({ 'n.md': '![](https://x.test/a.webp)' });
+  const ctx = context(vault, new FakeHttp({}));
+  await processRemoteImages('n.md', ctx);
+  const details = ctx.stats.lines.filter((line) => line.startsWith('  GET '));
+  assert.deepEqual(details.map((line) => line.split(' ')[3]), [
+    'https://x.test/a.webp', 'https://x.test/a.jpg', 'https://x.test/a.jpeg', 'https://x.test/a.png', 'https://x.test/a.gif',
+  ]);
+});

@@ -87,7 +87,7 @@ async function saveImage(data: ArrayBuffer, type: ImageType, url: string, noteDi
   const converted = await ctx.convert(data, type, ctx.signal);
   ctx.signal?.throwIfAborted();
   const folder = resolveFolder(ctx.settings.folder, noteDir);
-  const stored = await ctx.library.save(found.key, folder, baseNameFromUrl(url), converted.ext, converted.data);
+  const stored = await ctx.library.save(found.tag, folder, baseNameFromUrl(url), converted.ext, converted.data);
   return { ...stored, size: converted.data.byteLength, detail: stored.created ? converted.detail : IDENTICAL };
 }
 

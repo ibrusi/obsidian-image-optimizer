@@ -1,6 +1,5 @@
 import { type App, normalizePath, requestUrl, TFile, TFolder } from 'obsidian';
 import type { HttpPort, LinkPort, MetadataPort, VaultPort } from './ports.ts';
-import type { IndexStorage } from './source-index.ts';
 
 export class ObsidianVault implements VaultPort {
   private readonly app: App;
@@ -53,6 +52,10 @@ export class ObsidianVault implements VaultPort {
     // system=false: the vault's .trash folder exists on every platform and
     // keeps the original restorable, whatever the "Deleted files" setting.
     await this.app.vault.trash(this.file(path), false);
+  }
+
+  allFiles(): string[] {
+    return this.app.vault.getFiles().map((file) => file.path);
   }
 
   textFiles(): string[] {
@@ -117,24 +120,3 @@ export class ObsidianHttp implements HttpPort {
   }
 }
 
-// JsonFileStorage keeps JSON in a file outside the vault's notes, such as
-// the plugin's own folder under .obsidian. A missing file loads as null.
-export class JsonFileStorage implements IndexStorage {
-  private readonly app: App;
-  private readonly path: string;
-
-  constructor(app: App, path: string) {
-    this.app = app;
-    this.path = normalizePath(path);
-  }
-
-  async load(): Promise<unknown> {
-    const adapter = this.app.vault.adapter;
-    if (!(await adapter.exists(this.path))) return null;
-    return JSON.parse(await adapter.read(this.path));
-  }
-
-  async save(data: unknown): Promise<void> {
-    await this.app.vault.adapter.write(this.path, JSON.stringify(data));
-  }
-}

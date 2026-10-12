@@ -3,10 +3,12 @@ import { test } from 'node:test';
 import type { Converted } from '../src/services/converter.ts';
 import { RunStats } from '../src/services/stats.ts';
 import { optimizeNotes, type Progress } from '../src/services/vault-run.ts';
-import { FakeHttp, FakeLinks, FakeMetadata, memoryLibrary, MemoryVault } from './fakes.ts';
+import { FakeHttp, FakeLinks, FakeMetadata, memoryLibrary, MemoryVault, tagFor } from './fakes.ts';
 
 const PNG = (fill = 3) => Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Array(992).fill(fill)]).buffer;
 const WEBP = new Uint8Array(10).buffer;
+const A_TAG = await tagFor(PNG());
+const P_TAG = await tagFor(PNG(4));
 
 function context(vault: MemoryVault, http: FakeHttp, signal?: AbortSignal) {
   return {
@@ -36,8 +38,8 @@ test('every note is processed, originals are retired once at the end', async () 
   const ctx = context(vault, http);
   await optimizeNotes(['a.md', 'b.md', 'c.md'], ctx, { convertLocal: true, onProgress: (p) => progress.push(p) });
 
-  assert.equal(vault.text('a.md'), '![[Attachments/a.webp]]');
-  assert.equal(vault.text('b.md'), '![[p.webp]]');
+  assert.equal(vault.text('a.md'), `![[Attachments/a-${A_TAG}.webp]]`);
+  assert.equal(vault.text('b.md'), `![[p-${P_TAG}.webp]]`);
   assert.deepEqual(vault.trashed, ['p.png']);
   assert.deepEqual(progress.map((p) => p.done), [0, 1, 2, 3]);
   assert.equal(ctx.stats.converted, 2);
@@ -58,7 +60,7 @@ test('a cancelled run keeps finished notes and still retires their originals', a
     onProgress: (p) => { if (p.done === 1) controller.abort(); },
   });
   await assert.rejects(run, { name: 'AbortError' });
-  assert.equal(vault.text('a.md'), '![[p.webp]]');
+  assert.equal(vault.text('a.md'), `![[p-${A_TAG}.webp]]`);
   assert.equal(vault.text('b.md'), '![[q.png]]');
   assert.deepEqual(vault.trashed, ['p.png']);
 });

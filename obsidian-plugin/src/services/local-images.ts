@@ -106,8 +106,8 @@ export class LocalImages {
   // Returns null, after logging why, when converting is not worth it.
   private async webpFor(original: string, data: ArrayBuffer, type: ImageType): Promise<WebpFile | null> {
     const { vault, library, stats, signal } = this.ctx;
-    // Only a WebP replaces the original: the index may point at the
-    // original itself, or at an unconverted copy of it.
+    // Only a WebP replaces the original: the tag also matches the original
+    // itself when it was pasted unconverted, or an unconverted copy of it.
     const found = await library.find(data, (path) => path !== original && extension(path) === 'webp');
     if (found.path) return { path: found.path, created: false, size: vault.size(found.path) ?? data.byteLength, detail: REUSED };
 
@@ -121,7 +121,7 @@ export class LocalImages {
     const folder = slash === -1 ? '' : original.slice(0, slash);
     const name = original.slice(slash + 1);
     const stem = name.slice(0, name.lastIndexOf('.')) || name;
-    const stored = await library.save(found.key, folder, stem, 'webp', converted.data);
+    const stored = await library.save(found.tag, folder, stem, 'webp', converted.data);
     return { ...stored, size: converted.data.byteLength, detail: stored.created ? converted.detail : IDENTICAL };
   }
 

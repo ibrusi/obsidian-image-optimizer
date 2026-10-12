@@ -95,8 +95,9 @@ const en = {
     },
     reuseIdentical: {
       name: 'Reuse identical files',
-      desc: 'An image added again — the same link in another note, the same picture pasted twice — is linked to the file ' +
-        'saved the first time, even after the quality or other settings changed. Existing files are never changed.',
+      desc: 'Saved files get a short fingerprint of the original in their name (photo-3fa9c2e1b7d0.webp). An image added ' +
+        'again — in another note, pasted twice, or on another device after sync — is linked to that file, even after the ' +
+        'settings changed. Off: no fingerprint, every image is saved as a new file. Existing files are never changed.',
     },
     limits: 'Limits',
     maxDownload: {
@@ -198,9 +199,10 @@ const ru: Strings = {
     },
     reuseIdentical: {
       name: 'Не сохранять одинаковые файлы',
-      desc: 'Картинка, добавленная повторно — та же ссылка в другой заметке, та же картинка, вставленная дважды, — ' +
-        'ссылается на файл, сохранённый в первый раз, даже если качество или другие настройки с тех пор менялись. ' +
-        'Существующие файлы никогда не изменяются.',
+      desc: 'В имя сохранённого файла добавляется короткий отпечаток оригинала (photo-3fa9c2e1b7d0.webp). Картинка, ' +
+        'добавленная повторно — в другой заметке, вставленная дважды или на другом устройстве после синхронизации, — ' +
+        'ссылается на этот файл, даже если настройки менялись. Выкл.: без отпечатка, каждая картинка сохраняется новым ' +
+        'файлом. Существующие файлы никогда не изменяются.',
     },
     limits: 'Ограничения',
     maxDownload: {

@@ -8,10 +8,11 @@ export interface Stored {
   created: boolean;
 }
 
-// store saves data as stem.ext in folder. If a file of the same name family
-// (stem.ext, stem-1.ext, …) already holds exactly these bytes, that file is
-// reused instead of writing a duplicate. Otherwise the data is written under
-// a free name. Existing files are never overwritten or changed.
+// store saves data as saveAs.ext in folder (saveAs defaults to stem). If a
+// file of the name family of stem (stem.ext, stem-1.ext, …) already holds
+// exactly these bytes, that file is reused instead of writing a duplicate.
+// Otherwise the data is written under a free name. Existing files are never
+// overwritten or changed.
 //
 // Only a file with created=true belongs to the caller: a reused file may be
 // linked from other notes and must never be removed by the caller. With
@@ -23,10 +24,11 @@ export async function store(
   ext: string,
   data: ArrayBuffer,
   reuseIdentical: boolean,
+  saveAs = stem,
 ): Promise<Stored> {
   const existing = reuseIdentical ? await findIdentical(vault, folder, stem, ext, data) : null;
   if (existing) return { path: existing, created: false };
-  return { path: await saveNew(vault, folder, stem, ext, data), created: true };
+  return { path: await saveNew(vault, folder, saveAs, ext, data), created: true };
 }
 
 // findIdentical returns a file of the name family with exactly these bytes.

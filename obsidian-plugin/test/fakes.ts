@@ -1,7 +1,7 @@
 import { findLocalLinks } from '../src/domain/local-links.ts';
-import { ImageLibrary } from '../src/services/library.ts';
+import { tagOfFingerprint } from '../src/domain/source-tag.ts';
+import { fingerprint, ImageLibrary } from '../src/services/library.ts';
 import type { HttpPort, HttpResponse, LinkPort, MetadataPort, VaultPort } from '../src/services/ports.ts';
-import { type IndexStorage, SourceIndex } from '../src/services/source-index.ts';
 
 // MemoryVault is an in-memory VaultPort with the same no-clobber and
 // case-insensitive name semantics as a real vault on desktop and mobile.
@@ -69,6 +69,10 @@ export class MemoryVault implements VaultPort {
 
   async ensureFolder(folder: string): Promise<void> {
     if (folder) this.put(`${folder}/.keep`, ''), this.files.delete(`${folder}/.keep`);
+  }
+
+  allFiles(): string[] {
+    return [...this.files.keys()];
   }
 
   textFiles(): string[] {
@@ -141,19 +145,11 @@ function normalize(path: string): string {
   return parts.join('/');
 }
 
-// MemoryStorage keeps saved data as a JSON round trip, like a file would.
-export class MemoryStorage implements IndexStorage {
-  data: unknown = null;
-
-  async load(): Promise<unknown> {
-    return this.data;
-  }
-
-  async save(data: unknown): Promise<void> {
-    this.data = JSON.parse(JSON.stringify(data));
-  }
+export function memoryLibrary(vault: VaultPort, reuse = true): ImageLibrary {
+  return new ImageLibrary(vault, reuse);
 }
 
-export function memoryLibrary(vault: VaultPort, reuse = true, index = SourceIndex.empty(new MemoryStorage())): ImageLibrary {
-  return new ImageLibrary(vault, index, reuse);
+/** The source tag the library gives to an original. */
+export async function tagFor(original: ArrayBuffer): Promise<string> {
+  return tagOfFingerprint(await fingerprint(original));
 }

@@ -17,6 +17,8 @@ export interface VaultPort {
   ensureFolder(folder: string): Promise<void>;
   /** Moves a file into the vault's .trash folder, where it can be restored. */
   trash(path: string): Promise<void>;
+  /** Paths of every file in the vault, from the vault's in-memory list. */
+  allFiles(): string[];
   /** Paths of every note and canvas: the files that can refer to an image. */
   textFiles(): string[];
 }

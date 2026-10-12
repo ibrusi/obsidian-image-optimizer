@@ -4,11 +4,12 @@ import type { ImageType } from '../src/domain/sniff.ts';
 import type { Converted } from '../src/services/converter.ts';
 import { processRemoteImages, type RemoteContext } from '../src/services/remote-images.ts';
 import { RunStats } from '../src/services/stats.ts';
-import { FakeHttp, FakeLinks, memoryLibrary, MemoryVault } from './fakes.ts';
+import { FakeHttp, FakeLinks, memoryLibrary, MemoryVault, tagFor } from './fakes.ts';
 
 const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Array(992).fill(1)]).buffer;
 const HTML = new TextEncoder().encode('<!doctype html><title>Hotlinking denied</title>').buffer as ArrayBuffer;
 const WEBP = new Uint8Array(100).buffer;
+const A = `a-${await tagFor(PNG)}.webp`;
 
 function context(vault: MemoryVault, http: FakeHttp, overrides: Partial<RemoteContext> = {}): RemoteContext {
   return {
@@ -37,7 +38,7 @@ test('web images are saved into the folder and every embed is rewritten with its
   await processRemoteImages(note, ctx);
 
   assert.equal(vault.text(note),
-    'A ![[habr/Attachments/a.webp|first|300]] B ![[habr/Attachments/a.webp|120]] C ![bad](https://x.test/page)\n');
+    `A ![[habr/Attachments/${A}|first|300]] B ![[habr/Attachments/${A}|120]] C ![bad](https://x.test/page)\n`);
   assert.deepEqual(http.requests, ['https://x.test/a.png', 'https://x.test/page'], 'each URL is downloaded once');
   assert.equal(ctx.stats.converted, 1);
   assert.equal(ctx.stats.failed, 1, 'an HTML page is not an image');
@@ -74,7 +75,7 @@ test('an embed removed during the download leaves no orphan file', async () => {
     },
   });
   await processRemoteImages('n.md', ctx);
-  assert.deepEqual(vault.trashed, ['Attachments/a.webp']);
+  assert.deepEqual(vault.trashed, [`Attachments/${A}`]);
   assert.equal(vault.text('n.md'), 'the user deleted the image');
 });
 
@@ -106,9 +107,9 @@ test('the same image in a second note reuses the saved file', async () => {
   const ctx = context(vault, http);
   await processRemoteImages('a.md', ctx);
   await processRemoteImages('b.md', ctx);
-  assert.equal(vault.text('a.md'), '![[Attachments/a.webp]]');
-  assert.equal(vault.text('b.md'), '![[Attachments/a.webp]]');
-  assert.deepEqual([...vault.files.keys()].filter((p) => p.endsWith('.webp')), ['Attachments/a.webp']);
+  assert.equal(vault.text('a.md'), `![[Attachments/${A}]]`);
+  assert.equal(vault.text('b.md'), `![[Attachments/${A}]]`);
+  assert.deepEqual([...vault.files.keys()].filter((p) => p.endsWith('.webp')), [`Attachments/${A}`]);
   assert.match(ctx.stats.lines.join('\n'), /reused/);
 });
 
@@ -136,9 +137,9 @@ test('the same image added again after the encoding changed reuses the first fil
   await processRemoteImages('a.md', context(vault, http, { library, convert }));
   const ctx = context(vault, http, { library, convert });
   await processRemoteImages('b.md', ctx);
-  assert.equal(vault.text('b.md'), '![[Attachments/a.webp]]');
+  assert.equal(vault.text('b.md'), `![[Attachments/${A}]]`);
   assert.equal(encodes, 1);
-  assert.deepEqual([...vault.files.keys()].filter((p) => p.endsWith('.webp')), ['Attachments/a.webp']);
+  assert.deepEqual([...vault.files.keys()].filter((p) => p.endsWith('.webp')), [`Attachments/${A}`]);
   assert.match(ctx.stats.lines.join('\n'), /already in the vault, reused/);
 });
 
@@ -149,4 +150,16 @@ test('with reuse off the same image is saved again', async () => {
   await processRemoteImages('a.md', context(vault, http, { library }));
   await processRemoteImages('b.md', context(vault, http, { library }));
   assert.equal(vault.text('b.md'), '![[Attachments/a-1.webp]]');
+});
+
+test('another device finds a file synced from the first one by its name alone', async () => {
+  // The first device saved the image; only the vault itself was synced.
+  const vault = new MemoryVault({ 'b.md': '![](https://x.test/a.png)', [`Attachments/${A}`]: new Uint8Array(77).buffer });
+  const http = new FakeHttp({ 'https://x.test/a.png': { status: 200, body: PNG } });
+  let encodes = 0;
+  const ctx = context(vault, http, { convert: async () => { encodes++; return { data: WEBP, ext: 'webp', replaced: true, detail: 'ok' }; } });
+  await processRemoteImages('b.md', ctx);
+  assert.equal(vault.text('b.md'), `![[Attachments/${A}]]`);
+  assert.equal(encodes, 0);
+  assert.equal([...vault.files.keys()].filter((p) => p.endsWith('.webp')).length, 1);
 });

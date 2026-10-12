@@ -3,10 +3,11 @@ import { test } from 'node:test';
 import type { Converted } from '../src/services/converter.ts';
 import { savePastedImage } from '../src/services/pasted-images.ts';
 import { RunStats } from '../src/services/stats.ts';
-import { memoryLibrary, MemoryVault } from './fakes.ts';
+import { memoryLibrary, MemoryVault, tagFor } from './fakes.ts';
 
 const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Array(500).fill(9)]).buffer;
 const now = new Date(2026, 9, 11, 15, 30, 5);
+const TAG = await tagFor(PNG);
 
 test('a pasted screenshot is saved as WebP into the folder of the note', async () => {
   const vault = new MemoryVault({ 'notes/a.md': '' });
@@ -17,7 +18,7 @@ test('a pasted screenshot is saved as WebP into the folder of the note', async (
     settings: { folder: 'Attachments' },
     stats: new RunStats(),
   }, now);
-  assert.equal(path, 'notes/Attachments/Pasted image 20261011153005.webp');
+  assert.equal(path, `notes/Attachments/Pasted image 20261011153005-${TAG}.webp`);
 });
 
 test('a failure while converting saves the original instead of losing the image', async () => {
@@ -30,8 +31,8 @@ test('a failure while converting saves the original instead of losing the image'
     settings: { folder: '/' },
     stats,
   }, now);
-  assert.equal(path, 'diagram.png');
-  assert.equal(vault.files.get('diagram.png'), PNG);
+  assert.equal(path, `diagram-${TAG}.png`);
+  assert.equal(vault.files.get(path), PNG);
   assert.match(stats.lines.join('\n'), /saved unconverted \(out of memory\)/);
 });
 

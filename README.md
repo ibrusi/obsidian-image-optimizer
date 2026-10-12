@@ -47,7 +47,7 @@ With **Convert on paste and drop** enabled (default), pasted and dropped images 
 | GIF | Convert to WebP | Or keep GIFs as they are. |
 | Convert images already in the vault | on | Commands also convert local JPG/PNG/BMP/GIF and move the originals to `.trash`. |
 | Convert on paste and drop | on | See above. |
-| Reuse identical files | on | An image added again (the same link in another note, the same picture pasted twice, a copy of a local image) is linked to the file saved the first time instead of being saved and encoded again, even after the settings changed. Off: every image is saved as a new file. |
+| Reuse identical files | on | Saved files get a fingerprint of the original in their name; an image added again (another note, pasted twice, a copy of a local image, another device) is linked to the existing file instead of being saved and encoded again, even after the settings changed. Off: names without fingerprint, every image is saved as a new file. |
 | Maximum download, MB | `30` | Larger downloads are refused. |
 | Maximum image size, megapixels | `50` | Larger images are kept as they are (for animations: width × height × frames), to protect memory on phones. |
 | Allow private network addresses | off | By default links to `localhost`, `*.local` and private, loopback and link-local IP addresses are refused, so a note from an untrusted source cannot probe your network. |
@@ -57,7 +57,8 @@ Plugin settings are stored in `.obsidian/plugins/obsidian-image-optimizer/data.j
 
 ### Good to know
 - EXIF metadata (date, GPS) is not kept in converted images; the orientation of phone photos is applied to the pixels.
-- Files are never overwritten: new files get a free name (`pic.webp`, `pic-1.webp`, …). The same image added again is linked to the file saved the first time instead of being saved again (setting *Reuse identical files*): the plugin keeps a fingerprint (SHA-256) of every original it saved in `sources.json` in its folder, and also reuses a file of the same name with exactly the same bytes.
+- Files are never overwritten: a taken name gets a number (`pic-…-1.webp`).
+- Saved files carry a short fingerprint of their original in the name: `photo-3fa9c2e1b7d0.webp` (the first 12 hex digits of the SHA-256 of the downloaded, pasted or local original). The same image added again — in another note, pasted twice, or on another device after sync — is found by that name and linked instead of being saved and encoded again, whatever the settings were (setting *Reuse identical files*). Nothing beyond the vault itself has to be synced. A file renamed by hand loses its fingerprint; then the image may be saved once more, never lost. Files saved by earlier versions are still reused when a new file would have exactly the same bytes.
 - Links inside code blocks, inline code and comments are left alone. Notes open in an editor are saved before they are rewritten.
 - WebP files are never re-encoded, so running the plugin again does not lower quality.
 

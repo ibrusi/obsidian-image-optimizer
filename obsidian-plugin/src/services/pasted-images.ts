@@ -45,7 +45,7 @@ export async function savePastedImage(
   }
   const noteDir = notePath.includes('/') ? notePath.slice(0, notePath.lastIndexOf('/')) : '/';
   const folder = resolveFolder(ctx.settings.folder, noteDir);
-  const { path, created } = await ctx.library.save(found.key, folder, pastedImageStem(fileName, now), converted.ext, converted.data);
+  const { path, created } = await ctx.library.save(found.tag, folder, pastedImageStem(fileName, now), converted.ext, converted.data);
   ctx.stats.saved(label, data.byteLength, converted.data.byteLength, `→ ${path}: ${created ? converted.detail : IDENTICAL}`);
   return path;
 }

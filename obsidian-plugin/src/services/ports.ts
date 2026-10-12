@@ -43,5 +43,5 @@ export interface HttpResponse {
 }
 
 export interface HttpPort {
-  get(url: string): Promise<HttpResponse>;
+  get(url: string, headers?: Record<string, string>): Promise<HttpResponse>;
 }

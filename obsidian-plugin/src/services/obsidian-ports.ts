@@ -114,8 +114,8 @@ export class ObsidianMetadata implements MetadataPort {
 // ObsidianHttp goes through Obsidian's native request layer: no CORS, and it
 // works in the mobile apps.
 export class ObsidianHttp implements HttpPort {
-  async get(url: string) {
-    const response = await requestUrl({ url, method: 'GET', throw: false });
+  async get(url: string, headers?: Record<string, string>) {
+    const response = await requestUrl({ url, method: 'GET', headers, throw: false });
     return { status: response.status, body: response.arrayBuffer };
   }
 }

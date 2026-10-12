@@ -182,3 +182,47 @@ test('the same picture arriving as another original reuses the WebP it encodes t
   assert.equal(vault.text('n.md'), '![[Attachments/Pasted image-0123456789abcdef.webp]]');
   assert.match(ctx.stats.lines.join('\n'), /identical file already in the vault, reused/);
 });
+
+test('images are requested like a browser on the source page', async () => {
+  const page = 'https://x.test/2025/05/post/';
+  const vault = new MemoryVault({ 'n.md': `---\nsource: "${page}"\n---\n![](https://static.x.test/a.png) ![](https://cdn.y.test/b.png)` });
+  const http = new FakeHttp({});
+  await processRemoteImages('n.md', context(vault, http));
+  assert.match(http.headers[0]?.Accept ?? '', /image\/webp/);
+  assert.equal(http.headers[0]?.Referer, page, 'the source page for its own site');
+  assert.equal(http.headers[1]?.Referer, 'https://cdn.y.test/', 'the image site for another one');
+});
+
+test('a .webp the site no longer serves is replaced by its original', async () => {
+  const vault = new MemoryVault({ 'n.md': '![](https://x.test/up/cover.webp)' });
+  const http = new FakeHttp({
+    'https://x.test/up/cover.jpeg': { status: 200, body: HTML },
+    'https://x.test/up/cover.png': { status: 200, body: PNG },
+  });
+  const ctx = context(vault, http);
+  await processRemoteImages('n.md', ctx);
+  assert.deepEqual(http.requests, [
+    'https://x.test/up/cover.webp',
+    'https://x.test/up/cover.jpg',
+    'https://x.test/up/cover.jpeg',
+    'https://x.test/up/cover.png',
+  ]);
+  assert.equal(vault.text('n.md'), `![[Attachments/cover-${await tagFor(PNG)}.webp]]`);
+  assert.equal(ctx.stats.failed, 0);
+  assert.ok(ctx.stats.lines.some((line) => line.includes('from https://x.test/up/cover.png')), 'the log names the URL used');
+});
+
+test('a missing .webp without an original keeps its link and reports the 404', async () => {
+  const vault = new MemoryVault({ 'n.md': '![](https://x.test/up/cover.webp)' });
+  const http = new FakeHttp({ 'https://x.test/up/cover.webp': { status: 403, body: new ArrayBuffer(0) } });
+  const ctx = context(vault, http);
+  await processRemoteImages('n.md', ctx);
+  assert.deepEqual(http.requests, ['https://x.test/up/cover.webp'], 'only a 404 looks for the original');
+  assert.equal(vault.text('n.md'), '![](https://x.test/up/cover.webp)');
+  assert.equal(ctx.stats.failed, 1);
+
+  const gone = new MemoryVault({ 'n.md': '![](https://x.test/up/cover.webp)' });
+  const ctx404 = context(gone, new FakeHttp({}));
+  await processRemoteImages('n.md', ctx404);
+  assert.ok(ctx404.stats.lines.some((line) => line.endsWith('cover.webp: HTTP 404')));
+});

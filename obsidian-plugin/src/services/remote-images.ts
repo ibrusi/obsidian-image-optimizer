@@ -1,6 +1,7 @@
 import { resolveFolder } from '../domain/folders.ts';
 import { findRemoteImages, replaceImages, type RemoteImage } from '../domain/links.ts';
 import { baseNameFromUrl } from '../domain/names.ts';
+import { pageUrlOf, refererFor } from '../domain/request.ts';
 import type { ImageType } from '../domain/sniff.ts';
 import type { PluginSettings } from '../settings.ts';
 import type { Converted } from './converter.ts';
@@ -29,14 +30,16 @@ export async function processRemoteImages(
   ctx: RemoteContext,
   only?: ReadonlySet<string>,
 ): Promise<void> {
-  const urls = new Set(findRemoteImages(await ctx.vault.read(notePath)).map((i) => i.url));
+  const text = await ctx.vault.read(notePath);
+  const urls = new Set(findRemoteImages(text).map((i) => i.url));
+  const pageUrl = pageUrlOf(text);
   const noteDir = notePath.includes('/') ? notePath.slice(0, notePath.lastIndexOf('/')) : '/';
 
   for (const url of urls) {
     if (only && !only.has(url)) continue;
     ctx.signal?.throwIfAborted();
     try {
-      await processOne(notePath, noteDir, url, ctx);
+      await processOne(notePath, noteDir, url, pageUrl, ctx);
     } catch (error) {
       if (ctx.signal?.aborted) throw error;
       ctx.stats.error(url, error);
@@ -44,13 +47,16 @@ export async function processRemoteImages(
   }
 }
 
-async function processOne(notePath: string, noteDir: string, url: string, ctx: RemoteContext): Promise<void> {
+async function processOne(notePath: string, noteDir: string, url: string, pageUrl: string | null, ctx: RemoteContext): Promise<void> {
   const downloaded = await download(ctx.http, url, {
     maxBytes: ctx.settings.maxDownloadMB * 1024 * 1024,
     allowPrivateHosts: ctx.settings.allowPrivateHosts,
     signal: ctx.signal,
+    referer: refererFor(url, pageUrl),
   });
-  const { path, created, size, detail } = await saveImage(downloaded.data, downloaded.type, url, noteDir, ctx);
+  const saved = await saveImage(downloaded.data, downloaded.type, downloaded.url, noteDir, ctx);
+  const { path, created, size } = saved;
+  const detail = downloaded.url === url ? saved.detail : `from ${downloaded.url}, ${saved.detail}`;
 
   let rewritten = 0;
   // process() re-reads the note: edits made during the download are kept.

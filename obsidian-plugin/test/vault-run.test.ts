@@ -45,6 +45,14 @@ test('every note is processed, originals are retired once at the end', async () 
   assert.equal(ctx.stats.converted, 2);
   const notes = ctx.stats.lines.filter((line) => line.startsWith('note: '));
   assert.deepEqual(notes, ['note: a.md', 'note: b.md'], 'the log names each note with images before its lines');
+  assert.ok(ctx.stats.lines.indexOf('note: a.md') < ctx.stats.lines.findIndex((line) => line.startsWith('https://x.test/a.png')));
+});
+
+test('a note whose images are all done already is not named in the log', async () => {
+  const vault = new MemoryVault({ 'done.md': '![[pic.webp]]', 'pic.webp': testWebp(8, 8) });
+  const ctx = context(vault, new FakeHttp({}));
+  await optimizeNotes(['done.md'], ctx, { convertLocal: true, onProgress: () => {} });
+  assert.deepEqual(ctx.stats.lines, []);
 });
 
 test('local images are left alone when convertLocal is off', async () => {

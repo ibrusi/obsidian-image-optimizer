@@ -214,10 +214,10 @@ test('a .webp the site no longer serves is replaced by its original', async () =
 
 test('a missing .webp without an original keeps its link and reports the 404', async () => {
   const vault = new MemoryVault({ 'n.md': '![](https://x.test/up/cover.webp)' });
-  const http = new FakeHttp({ 'https://x.test/up/cover.webp': { status: 403, body: new ArrayBuffer(0) } });
+  const http = new FakeHttp({ 'https://x.test/up/cover.webp': { status: 500, body: new ArrayBuffer(0) } });
   const ctx = context(vault, http);
   await processRemoteImages('n.md', ctx);
-  assert.deepEqual(http.requests, ['https://x.test/up/cover.webp'], 'only a 404 looks for the original');
+  assert.deepEqual(http.requests, ['https://x.test/up/cover.webp'], 'only a 404 or 403 looks for the original');
   assert.equal(vault.text('n.md'), '![](https://x.test/up/cover.webp)');
   assert.equal(ctx.stats.failed, 1);
 
@@ -241,6 +241,27 @@ test('a request blocked with a Referer is sent again without it', async () => {
   await processRemoteImages('n.md', ctx);
   assert.equal(http.headers[0]?.Referer, 'https://x.test/post');
   assert.equal(http.headers[1]?.Referer, undefined);
+  assert.equal(ctx.stats.failed, 0);
+
+  // The client refused a Referer once: the next image goes without one.
+  await vault.process('n.md', (text) => `${text} ![](https://x.test/b.png)`);
+  await processRemoteImages('n.md', ctx);
+  assert.equal(http.requests.length, 3);
+  assert.equal(http.headers[2]?.Referer, undefined);
+});
+
+test('a .webp that storage refuses as AccessDenied (403) is taken in its original format', async () => {
+  const denied = new TextEncoder().encode('<?xml version="1.0"?><Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>').buffer as ArrayBuffer;
+  const vault = new MemoryVault({ 'n.md': '![](https://static.x.test/images/1/0.webp)' });
+  const http = new FakeHttp({
+    'https://static.x.test/images/1/0.webp': { status: 403, body: denied, headers: { 'content-type': 'application/xml' } },
+    'https://static.x.test/images/1/0.jpg': { status: 403, body: denied },
+    'https://static.x.test/images/1/0.jpeg': { status: 403, body: denied },
+    'https://static.x.test/images/1/0.png': { status: 200, body: PNG },
+  });
+  const ctx = context(vault, http);
+  await processRemoteImages('n.md', ctx);
+  assert.equal(vault.text('n.md'), `![[Attachments/0-${await tagFor(PNG)}.webp]]`);
   assert.equal(ctx.stats.failed, 0);
 });
 

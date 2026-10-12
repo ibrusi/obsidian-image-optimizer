@@ -74,3 +74,19 @@ test('markdown and html embeds come back in document order and are both replaced
   const result = replaceImages(text, (i) => names[i.url]);
   assert.equal(result, '![[b.webp]] then ![[a.webp]]');
 });
+
+test('YouTube videos and tweets embedded as images are not images', () => {
+  const text = [
+    '![](https://www.youtube.com/watch?v=ql-uncsqoAU)',
+    '![](https://youtu.be/ql-uncsqoAU)',
+    '![](https://m.youtube.com/shorts/abc)',
+    '![](https://x.com/user/status/123)',
+    '![](https://twitter.com/user/status/123)',
+    '![](https://www.youtube.com/img/logo.png)',
+    '![](https://x.com/logo.png)',
+  ].join('\n');
+  assert.deepEqual(findRemoteImages(text).map((image) => image.url), [
+    'https://www.youtube.com/img/logo.png',
+    'https://x.com/logo.png',
+  ]);
+});

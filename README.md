@@ -18,12 +18,16 @@ It is an **Obsidian plugin** (`obsidian-plugin/`) that works on **Windows, macOS
 - **Stays responsive**: encoding runs in a background worker, one image at a time; long runs show progress and can be stopped.
 
 ### Installation
-Until the plugin is in the community catalogue, install it with **BRAT**:
+From the community catalogue (once the plugin is accepted): *Settings → Community plugins → Browse*, search for **Image Optimizer**, install and enable it.
+
+Until then, or for test versions, install it with **BRAT**:
 1. Install and enable the community plugin **BRAT**.
 2. Run **BRAT: Add a beta plugin for testing**, enter `ibrusi/obsidian-image-optimizer` and pick the latest version.
 3. Enable **Image Optimizer** in *Settings → Community plugins*.
 
-Manual installation: download `obsidian-image-optimizer.zip` from the [latest release](https://github.com/ibrusi/obsidian-image-optimizer/releases), unpack it into `<vault>/.obsidian/plugins/` (the `.obsidian` folder is hidden) and enable the plugin.
+Manual installation: download `image-optimizer.zip` from the [latest release](https://github.com/ibrusi/obsidian-image-optimizer/releases), unpack it into `<vault>/.obsidian/plugins/` (the `.obsidian` folder is hidden) and enable the plugin.
+
+**Upgrading from 2.0.0 beta versions.** The plugin id changed from `obsidian-image-optimizer` to `image-optimizer` (the catalogue does not allow "obsidian" in an id), so version 1.0.0 installs as a new plugin. On its first start it takes over the settings of the beta and reminds you to uninstall it: with both enabled, every paste would be handled twice.
 
 ### Usage
 Open the command palette (`Ctrl/Cmd+P` on a computer; on a phone swipe down in a note or use the menu) and type **image**:
@@ -56,7 +60,7 @@ With **Convert on paste and drop** enabled (default), pasted and dropped images 
 | Allow private network addresses | off | By default links to `localhost`, `*.local` and private, loopback and link-local IP addresses are refused, so a note from an untrusted source cannot probe your network. |
 | Write a log note | off | Appends details of every run to `image-optimizer-log.md` (in English, for troubleshooting): plugin and Obsidian version, platform, each note with its images, and for a failed download every request with what was sent and what the site answered (status, server headers, the start of an error page). |
 
-Plugin settings are stored in `.obsidian/plugins/obsidian-image-optimizer/data.json`; if your sync does not copy `.obsidian/plugins`, set them on every device.
+Plugin settings are stored in `.obsidian/plugins/image-optimizer/data.json`; if your sync does not copy `.obsidian/plugins`, set them on every device.
 
 ### Good to know
 - EXIF metadata (date, GPS) is not kept in converted images; the orientation of phone photos is applied to the pixels.

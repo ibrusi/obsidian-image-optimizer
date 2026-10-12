@@ -1,0 +1,10 @@
+{
+  "id": "image-optimizer",
+  "name": "Image Optimizer",
+  "version": "1.0.0",
+  "minAppVersion": "1.5.7",
+  "description": "Downloads images from notes and converts images to lightweight WebP on desktop and mobile, without external programs, and updates the links.",
+  "author": "ibrusi",
+  "authorUrl": "https://github.com/ibrusi",
+  "isDesktopOnly": false
+}

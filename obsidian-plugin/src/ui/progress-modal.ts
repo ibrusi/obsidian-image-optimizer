@@ -17,8 +17,7 @@ export class ProgressModal extends Modal {
     this.onCancel = onCancel;
     this.strings = strings;
     this.setTitle(title);
-    this.bar = this.contentEl.createEl('progress', { attr: { max: '1', value: '0' } });
-    this.bar.style.width = '100%';
+    this.bar = this.contentEl.createEl('progress', { cls: 'image-optimizer-progress', attr: { max: '1', value: '0' } });
     this.status = this.contentEl.createDiv();
     this.detail = this.contentEl.createDiv({ cls: 'setting-item-description' });
     new Setting(this.contentEl).addButton((button) => button

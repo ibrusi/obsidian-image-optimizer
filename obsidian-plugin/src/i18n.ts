@@ -32,6 +32,8 @@ const en = {
     placeDeleted: (embeds: string) => `The pasted image was saved, but its place in the note was deleted: ${embeds}`,
     details: (path: string) => `. Details: ${path}`,
     stopped: 'Stopped. ',
+    migrated: (legacyId: string) => `Image Optimizer: the earlier version of the plugin is installed (folder ${legacyId}); its settings, if any, were taken over. ` +
+      'Uninstall that version in Community plugins: with both enabled, every paste is handled twice.',
   },
   menu: {
     optimizeFolder: 'Optimize images in this folder',
@@ -141,6 +143,8 @@ const ru: Strings = {
     placeDeleted: (embeds) => `Вставленная картинка сохранена, но её место в заметке было удалено: ${embeds}`,
     details: (path) => `. Подробности: ${path}`,
     stopped: 'Остановлено. ',
+    migrated: (legacyId) => `Image Optimizer: установлена прежняя версия плагина (папка ${legacyId}); её настройки, если были, перенесены. ` +
+      'Удалите ту версию в разделе «Сторонние плагины»: если включены обе, каждая вставка обрабатывается дважды.',
   },
   menu: {
     optimizeFolder: 'Сжать картинки в этой папке',

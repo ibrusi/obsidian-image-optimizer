@@ -15,7 +15,7 @@ export class RunLog {
 
   add(line: string): void {
     this.lines.push(line);
-    console.log('[image-optimizer]', line);
+    console.debug('[image-optimizer]', line);
   }
 
   async flush(title: string): Promise<void> {

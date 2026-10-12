@@ -1,4 +1,4 @@
-import { apiVersion, type Command, getLanguage, MarkdownView, Notice, Platform, Plugin, TFile, TFolder } from 'obsidian';
+import { apiVersion, type Command, getLanguage, MarkdownView, normalizePath, Notice, Platform, Plugin, TFile, TFolder } from 'obsidian';
 import { WASM } from './codec/assets.ts';
 import { type Codec, createCodec } from './codec/codec.ts';
 import { decode } from './codec/decode.ts';
@@ -21,6 +21,9 @@ import { ImageOptimizerSettingTab } from './ui/settings-tab.ts';
 
 type RunContext = RemoteContext & LocalContext;
 
+/** The plugin id before it was renamed for the community catalog. */
+const LEGACY_ID = 'obsidian-image-optimizer';
+
 interface Run {
   stats: RunStats;
   log: RunLog;
@@ -36,8 +39,9 @@ export default class ImageOptimizerPlugin extends Plugin {
   private readonly queue = new JobQueue();
 
   async onload(): Promise<void> {
-    this.settings = normalizeSettings(await this.loadData());
+    const migrated = await this.loadSettings();
     this.strings = stringsFor(resolveLanguage(this.settings.language, appLanguage()));
+    if (migrated) new Notice(this.strings.notices.migrated(LEGACY_ID), 0);
     this.addSettingTab(new ImageOptimizerSettingTab(this.app, this));
 
     this.command('optimizeNote', {
@@ -85,6 +89,35 @@ export default class ImageOptimizerPlugin extends Plugin {
   onunload(): void {
     this.queue.cancelAll();
     void this.codec?.then((codec) => codec.dispose());
+  }
+
+  // loadSettings reads the settings. On the first start after the plugin id
+  // changed (obsidian-image-optimizer → image-optimizer, required by the
+  // community catalog) it takes them from the old plugin folder, if any, and
+  // saves them under the new id. Returns true when the old version is
+  // installed, so the user can be told to remove it: both enabled would
+  // handle every paste twice. Saving makes this happen once.
+  private async loadSettings(): Promise<boolean> {
+    const own: unknown = await this.loadData();
+    const legacy = own == null ? await this.legacyInstall() : null;
+    this.settings = normalizeSettings(own ?? legacy?.data);
+    if (legacy == null) return false;
+    await this.saveSettings();
+    return true;
+  }
+
+  // legacyInstall finds the plugin installed under its old id, with its
+  // settings when it has saved any.
+  private async legacyInstall(): Promise<{ data: unknown } | null> {
+    const adapter = this.app.vault.adapter;
+    const folder = normalizePath(`${this.app.vault.configDir}/plugins/${LEGACY_ID}`);
+    try {
+      if (!(await adapter.exists(`${folder}/manifest.json`)) && !(await adapter.exists(`${folder}/data.json`))) return null;
+      const data = (await adapter.exists(`${folder}/data.json`)) ? JSON.parse(await adapter.read(`${folder}/data.json`)) : null;
+      return { data };
+    } catch {
+      return { data: null }; // unreadable settings: start from the defaults
+    }
   }
 
   async saveSettings(): Promise<void> {

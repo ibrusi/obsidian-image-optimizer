@@ -1,16 +1,3 @@
-import type { ImageType } from './sniff.ts';
-
-export type Compression = 'lossless' | 'lossy';
-
-// compressionsFor lists the WebP compressions to try for an image type; the
-// smallest result wins. JPEG holds photos, which only shrink lossy. PNG, BMP
-// and GIF hold both graphics (screenshots, diagrams, screen recordings),
-// which are usually smallest lossless, and photos, which are smallest lossy:
-// only trying both tells which one an image is.
-export function compressionsFor(type: ImageType): readonly Compression[] {
-  return type === 'jpeg' ? ['lossy'] : ['lossless', 'lossy'];
-}
-
 // worthReplacing reports whether candidate is smaller than original by at
 // least minPercent. Re-encoding for a marginal gain only loses quality.
 export function worthReplacing(original: number, candidate: number, minPercent: number): boolean {

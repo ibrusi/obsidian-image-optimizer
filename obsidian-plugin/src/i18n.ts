@@ -67,7 +67,7 @@ const en = {
     quality: {
       name: 'Quality',
       desc: 'Lossy WebP quality, 1–100. 40 keeps text and photos visually unchanged at a fraction of the size. ' +
-        'PNG, BMP and GIF are also tried lossless, and the smaller file is kept.',
+        'Screenshots and screen recordings in PNG, BMP and GIF are encoded lossless instead, pixel for pixel.',
     },
     method: {
       name: 'Compression effort',
@@ -170,7 +170,7 @@ const ru: Strings = {
     quality: {
       name: 'Качество',
       desc: 'Качество WebP с потерями, 1–100. При 40 текст и фотографии выглядят так же, а весят в разы меньше. ' +
-        'PNG, BMP и GIF пробуются ещё и без потерь, сохраняется меньший файл.',
+        'Скриншоты и записи экрана в PNG, BMP и GIF сжимаются без потерь, пиксель в пиксель.',
     },
     method: {
       name: 'Степень сжатия',

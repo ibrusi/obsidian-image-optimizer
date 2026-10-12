@@ -1,6 +1,6 @@
 // Messages between the plugin and the encoder worker.
 
-import type { Compression } from '../domain/policy.ts';
+import type { Compression } from '../domain/compression.ts';
 
 export interface WasmBinaries {
   stillScalar: ArrayBuffer;

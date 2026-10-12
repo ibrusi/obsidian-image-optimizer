@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { blockedHostReason, compressionsFor, worthReplacing } from '../src/domain/policy.ts';
+import { blockedHostReason, worthReplacing } from '../src/domain/policy.ts';
 
 test('worthReplacing', () => {
   assert.equal(worthReplacing(1000, 1000, 0), false, 'equal size is never worth it');
@@ -27,9 +27,4 @@ test('blockedHostReason allows public hosts, and private ones when allowed', () 
   }
   assert.equal(blockedHostReason('http://192.168.1.1/a.png', true), null);
   assert.notEqual(blockedHostReason('file:///etc/passwd', true), null, 'protocol is checked regardless');
-});
-
-test('compressionsFor: JPEG lossy only, graphics formats try lossless first', () => {
-  assert.deepEqual(compressionsFor('jpeg'), ['lossy']);
-  for (const type of ['png', 'bmp', 'gif'] as const) assert.deepEqual(compressionsFor(type), ['lossless', 'lossy']);
 });

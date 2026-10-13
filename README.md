@@ -2,7 +2,7 @@
 
 [English](README.md) | [Русский](README.ru.md)
 
-Keeps the images of your [Obsidian](https://obsidian.md) notes small and local: web images are downloaded into the vault, and images are converted to WebP at a quality where the difference is not visible (**40** by default) — typically **5–8 times smaller** for screenshots and photos from the web. Links in your notes are updated automatically.
+Keeps the images of your [Obsidian](https://obsidian.md) notes small and local: web images are downloaded into the vault, and images are converted to WebP at a quality where the difference is not visible (**40** by default) — typically **5–8 times smaller** for screenshots and photos from the web. Links in your notes are updated automatically. It works on a single note, on a chosen folder with all its subfolders, or on the whole vault at once.
 
 It is an **Obsidian plugin** (`obsidian-plugin/`) that works on **Windows, macOS, Linux, Android and iOS**, with nothing to install in the operating system: the WebP encoder (libwebp, the library behind `cwebp`) is compiled to WebAssembly and ships inside the plugin.
 
@@ -14,6 +14,7 @@ It is an **Obsidian plugin** (`obsidian-plugin/`) that works on **Windows, macOS
   - [Usage](#usage)
   - [Settings](#settings)
   - [Good to know](#good-to-know)
+- [About the project](#-about-the-project)
 - [Development](#-development)
   - [Plugin](#plugin)
 - [License](#-license)
@@ -24,6 +25,7 @@ It is an **Obsidian plugin** (`obsidian-plugin/`) that works on **Windows, macOS
 ## 📱 Obsidian plugin
 
 ### What it does
+- **Works at three scales**: saves and converts images for **one note**, for **a chosen folder together with all its subfolders**, or for **the whole vault** — the same rules apply everywhere (see [Usage](#usage)).
 - **Downloads web images** (`![](https://…)` and `<img src="https://…">`) into a folder of your choice and points the embeds at the local files. Only real images are accepted: an HTML "hotlinking denied" page never replaces your link. YouTube videos and tweets embedded with `![](…)` are left as they are. Optionally, PDF files linked from notes are downloaded as well (setting *Download PDF files*, off by default). SVG images (formulas, diagrams) are saved as they are: a vector image stays sharp and is usually smaller than any WebP of it. A link that failed for good (404, 403, not an image) is not requested again by other notes in the same run; network errors and timeouts are, and every new run checks all links again. Images are requested the way a browser showing the page requests them (the page from the note's `source` property is sent as the referrer), and a `.webp` the site no longer serves (404, or 403 from file storage such as S3) is downloaded in its original format (`.jpg`, `.jpeg`, `.png`, `.gif` at the same address): web clippers save the WebP copy some sites hand to browsers.
 - **Converts to WebP** — JPG, PNG and BMP to WebP, **animated GIFs to animated WebP**. For PNG, BMP and GIF the plugin picks lossless or lossy encoding from the content: few colours and little change between frames (screenshots, diagrams, screen recordings) are encoded lossless, pixel for pixel; many colours or frames that change all over (photos, renders, video clips) lossy. If the chosen mode gives no saving, the other is tried; unclear images are encoded both ways and the smaller file wins. JPG is encoded lossy only. A converted image is used only if it is at least 5% smaller (configurable); otherwise the original is kept.
 - **Converts images already in the vault**: the WebP is written next to the original, every link to it in every note is rewritten (embeds, links, properties; sizes such as `|200` are kept), and the original is moved to the vault's `.trash` folder, where it can be restored. An original that is still mentioned anywhere — a canvas, a property, plain text — is kept.
@@ -80,6 +82,12 @@ Plugin settings are stored in `.obsidian/plugins/image-optimizer/data.json`; if 
 - Saved files carry a short fingerprint of their original in the name: `photo-3fa9c2e1b7d04a85.webp` (the first 16 hex digits of the SHA-256 of the downloaded, pasted or local original). The same image added again — in another note, pasted twice, or on another device after sync — is found by that name and linked instead of being saved and encoded again (before it is used, the found file is checked: a WebP must have the image's width and height, an unconverted original must match byte for byte, so a chance match of names never puts another picture into a note), whatever the settings were (setting *Reuse identical files*). Nothing beyond the vault itself has to be synced. A file renamed by hand loses its fingerprint; then the image may be saved once more, never lost. After encoding, a file anywhere in the vault with exactly the same bytes is reused as well: this catches the same picture arriving as a different original (an image copied from the browser is re-saved by the clipboard as another PNG) and files saved by earlier versions. Only files of exactly the same size are read for this.
 - Links inside code blocks, inline code and comments are left alone. Notes open in an editor are saved before they are rewritten.
 - WebP files are never re-encoded, so running the plugin again does not lower quality.
+
+---
+
+## 🧭 About the project
+
+The plugin was written with the help of AI to meet the author's own need: keeping the images in their notes light and stored locally, on every device. The code is covered by unit tests, and the encoders are checked in Chromium and WebKit in CI, but, like any software, it can contain mistakes — see the disclaimer below and make a backup before the first batch run.
 
 ---
 

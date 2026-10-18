@@ -76,7 +76,7 @@ export async function convert(
     data: best.data,
     ext: 'webp',
     replaced: true,
-    detail: `${best.compression}, ${formatBytes(input.byteLength)} → ${formatBytes(best.data.byteLength)}`,
+    detail: `${best.compression}, ${formatChange(input.byteLength, best.data.byteLength)}`,
   };
 }
 
@@ -147,7 +147,7 @@ async function convertAnimatedGif(
     data: best.data,
     ext: 'webp',
     replaced: true,
-    detail: `${info.frames} frames, ${best.compression}, ${formatBytes(input.byteLength)} → ${formatBytes(best.data.byteLength)}`,
+    detail: `${info.frames} frames, ${best.compression}, ${formatChange(input.byteLength, best.data.byteLength)}`,
   };
 }
 
@@ -155,6 +155,14 @@ export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+}
+
+export function savingsPercent(before: number, after: number): number {
+  return before > 0 && after < before ? Math.round(((before - after) / before) * 100) : 0;
+}
+
+function formatChange(before: number, after: number): string {
+  return `${formatBytes(before)} → ${formatBytes(after)} (-${savingsPercent(before, after)}%)`;
 }
 
 function megapixels(pixels: number): string {

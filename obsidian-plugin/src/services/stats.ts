@@ -1,5 +1,5 @@
 import type { Strings } from '../i18n.ts';
-import { formatBytes } from './converter.ts';
+import { formatBytes, savingsPercent } from './converter.ts';
 
 /** Prefix of a line that details the line before it; the log nests it. */
 export const DETAIL = '  ';
@@ -45,6 +45,7 @@ export class RunStats {
       failed: this.failed,
       before: bytes ? formatBytes(this.bytesBefore) : '',
       after: bytes ? formatBytes(this.bytesAfter) : '',
+      savings: savingsPercent(this.bytesBefore, this.bytesAfter),
     });
   }
 }

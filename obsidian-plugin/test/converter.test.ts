@@ -50,7 +50,7 @@ test('a screenshot is encoded lossless once when that is worth it', async () => 
   assert.equal(result.replaced, true);
   assert.equal(result.ext, 'webp');
   assert.equal(result.data.byteLength, 300);
-  assert.match(result.detail, /^lossless,/);
+  assert.equal(result.detail, 'lossless, 1000 B → 300 B (-70%)');
   assert.deepEqual(calls, ['decode', 'encode lossless q40 m4']);
 });
 
@@ -144,7 +144,7 @@ test('animated GIFs become animated WebP with their frame timing', async () => {
   assert.equal(result.replaced, true);
   assert.equal(result.ext, 'webp');
   // Four flat colours: a graphic, encoded lossless once.
-  assert.match(result.detail, /3 frames, lossless,/);
+  assert.equal(result.detail, '3 frames, lossless, 1.4 KB → 10 B (-99%)');
   assert.deepEqual(calls, ['animate lossless 20x20x3 q40 50,50,50']);
 });
 

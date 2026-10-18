@@ -10,6 +10,7 @@ export interface Summary {
   failed: number;
   before: string;
   after: string;
+  savings: number;
 }
 
 export type FolderError =
@@ -47,7 +48,7 @@ const en = {
   },
   summary: (s: Summary) => {
     const parts = [`${s.converted} ${s.converted === 1 ? 'image' : 'images'} converted`];
-    if (s.before) parts.push(`${s.before} → ${s.after}`);
+    if (s.before) parts.push(`${s.before} → ${s.after} (-${s.savings}%)`);
     if (s.kept) parts.push(`${s.kept} kept as is`);
     if (s.failed) parts.push(`${s.failed} failed`);
     return parts.join(', ');
@@ -163,7 +164,7 @@ const ru: Strings = {
   },
   summary: (s) => {
     const parts = [`${plural(s.converted, 'сжата', 'сжаты', 'сжато')} ${s.converted} ${plural(s.converted, 'картинка', 'картинки', 'картинок')}`];
-    if (s.before) parts.push(`${s.before} → ${s.after}`);
+    if (s.before) parts.push(`${s.before} → ${s.after} (-${s.savings}%)`);
     if (s.kept) parts.push(`${s.kept} ${plural(s.kept, 'оставлена', 'оставлены', 'оставлено')} как есть`);
     if (s.failed) parts.push(`${s.failed} с ошибкой`);
     return parts.join(', ');

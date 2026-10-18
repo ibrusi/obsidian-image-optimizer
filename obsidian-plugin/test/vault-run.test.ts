@@ -44,8 +44,21 @@ test('every note is processed, originals are retired once at the end', async () 
   assert.deepEqual(progress.map((p) => p.done), [0, 1, 2, 3]);
   assert.equal(ctx.stats.converted, 2);
   const notes = ctx.stats.lines.filter((line) => line.startsWith('note: '));
-  assert.deepEqual(notes, ['note: a.md', 'note: b.md'], 'the log names each note with images before its lines');
-  assert.ok(ctx.stats.lines.indexOf('note: a.md') < ctx.stats.lines.findIndex((line) => line.startsWith('https://x.test/a.png')));
+  assert.deepEqual(notes, ['note: a.md (1000 B → 43 B, -96%)', 'note: b.md (1000 B → 44 B, -96%)'], 'the log names each note with images before its lines');
+  assert.ok(ctx.stats.lines.indexOf('note: a.md (1000 B → 43 B, -96%)') < ctx.stats.lines.findIndex((line) => line.startsWith('https://x.test/a.png')));
+});
+
+test('a note header logs the combined size and savings of all its images, and omits them when none were saved', async () => {
+  const vault = new MemoryVault({
+    'multi.md': '![](https://x.test/a.png) ![[p.png]]',
+    'failed.md': '![](https://x.test/missing.png)',
+    'p.png': PNG(4),
+  });
+  const http = new FakeHttp({ 'https://x.test/a.png': { status: 200, body: PNG() } });
+  const ctx = context(vault, http);
+  await optimizeNotes(['multi.md', 'failed.md'], ctx, { convertLocal: true, onProgress: () => {} });
+  const notes = ctx.stats.lines.filter((line) => line.startsWith('note: '));
+  assert.deepEqual(notes, ['note: multi.md (2.0 KB → 87 B, -96%)', 'note: failed.md']);
 });
 
 test('a note whose images are all done already is not named in the log', async () => {

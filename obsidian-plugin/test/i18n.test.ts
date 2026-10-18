@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { resolveLanguage, stringsFor } from '../src/i18n.ts';
+import { RunStats } from '../src/services/stats.ts';
 import { normalizeSettings } from '../src/settings.ts';
 
 test('auto follows the Obsidian language, English when the plugin lacks it', () => {
@@ -25,7 +26,7 @@ test('the language setting defaults to auto', () => {
 
 test('summaries use the plural forms of each language', () => {
   const summary = (language: 'en' | 'ru', converted: number) =>
-    stringsFor(language).summary({ converted, kept: 0, failed: 0, before: '', after: '' });
+    stringsFor(language).summary({ converted, kept: 0, failed: 0, before: '', after: '', savings: 0 });
   assert.equal(summary('en', 1), '1 image converted');
   assert.equal(summary('en', 2), '2 images converted');
   assert.equal(summary('ru', 1), 'сжата 1 картинка');
@@ -37,7 +38,15 @@ test('summaries use the plural forms of each language', () => {
 });
 
 test('a full summary', () => {
-  const s = { converted: 4, kept: 2, failed: 1, before: '2.5 MB', after: '400 KB' };
-  assert.equal(stringsFor('en').summary(s), '4 images converted, 2.5 MB → 400 KB, 2 kept as is, 1 failed');
-  assert.equal(stringsFor('ru').summary(s), 'сжаты 4 картинки, 2.5 MB → 400 KB, 2 оставлены как есть, 1 с ошибкой');
+  const s = { converted: 4, kept: 2, failed: 1, before: '2.5 MB', after: '400 KB', savings: 84 };
+  assert.equal(stringsFor('en').summary(s), '4 images converted, 2.5 MB → 400 KB (-84%), 2 kept as is, 1 failed');
+  assert.equal(stringsFor('ru').summary(s), 'сжаты 4 картинки, 2.5 MB → 400 KB (-84%), 2 оставлены как есть, 1 с ошибкой');
+});
+
+test('RunStats computes overall savings percentage for the summary', () => {
+  const stats = new RunStats();
+  stats.saved('a.png', 1000, 200, 'ok');
+  stats.saved('b.png', 1000, 400, 'ok');
+  assert.equal(stats.summary(stringsFor('en')), '2 images converted, 2.0 KB → 600 B (-70%)');
+  assert.equal(stats.summary(stringsFor('ru')), 'сжаты 2 картинки, 2.0 KB → 600 B (-70%)');
 });
